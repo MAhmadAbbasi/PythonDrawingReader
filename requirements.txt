@@ -1,0 +1,11 @@
+fastapi>=0.104
+uvicorn[standard]>=0.24
+python-multipart>=0.0.6
+ezdxf>=1.1
+pymupdf>=1.23
+shapely>=2.0
+pyyaml>=6.0
+pymysql>=1.1
+pytest>=7.4
+httpx>=0.25,<0.28   # starlette TestClient
+rapidocr-onnxruntime>=1.3   # OCR for printed PDFs (no text)

@@ -1,0 +1,568 @@
+{
+ "sizes": [
+  {
+   "id": 1,
+   "name": "1 BHK"
+  },
+  {
+   "id": 2,
+   "name": "2 BHK"
+  },
+  {
+   "id": 3,
+   "name": "5 Marla"
+  },
+  {
+   "id": 4,
+   "name": "10 Marla"
+  },
+  {
+   "id": 5,
+   "name": "1 Kanal"
+  },
+  {
+   "id": 6,
+   "name": "2 Kanal"
+  },
+  {
+   "id": 7,
+   "name": "5 Kanal"
+  },
+  {
+   "id": 8,
+   "name": "10 Kanal"
+  }
+ ],
+ "items": [
+  {
+   "id": 12,
+   "name": "Smart Panel Hpad X Pro",
+   "groupName": "Touch Panel",
+   "productLineName": "Hpad X Pro",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 1,
+   "name": "Smart Panel Hpad X",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 13,
+   "name": "Smart Panel Echo",
+   "groupName": "Touch Panel",
+   "productLineName": "Hpad Echo",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 1,
+    "6": 1,
+    "7": 2,
+    "8": 2
+   }
+  },
+  {
+   "id": 14,
+   "name": "Smart Panel Q2",
+   "groupName": "Touch Panel",
+   "productLineName": "Hpad Q2",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "1": 1,
+    "2": 1,
+    "3": 2,
+    "4": 2,
+    "5": 1,
+    "6": 2,
+    "7": 2,
+    "8": 6
+   }
+  },
+  {
+   "id": 2,
+   "name": "Smart Panel Qbrid",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 3,
+   "name": "Wireless Zigbee Gateway",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 15,
+   "name": "Smart Lock i5",
+   "groupName": "Smart Access",
+   "productLineName": "Door Lock i5",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "1": 1,
+    "2": 1,
+    "3": 1,
+    "4": 1,
+    "5": 1,
+    "6": 1
+   }
+  },
+  {
+   "id": 4,
+   "name": "Smart Lock i7",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 16,
+   "name": "Smart Lock i9 Pro",
+   "groupName": "Smart Access",
+   "productLineName": "Door Lock i9 Pro",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "7": 1,
+    "8": 1
+   }
+  },
+  {
+   "id": 5,
+   "name": "Luxury Smart Switch Marina",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 17,
+   "name": "Piano Switch 1 Gang",
+   "groupName": "Lighting Control",
+   "productLineName": "Piano Series",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "4": 2,
+    "5": 2,
+    "6": 4,
+    "7": 6,
+    "8": 8
+   }
+  },
+  {
+   "id": 18,
+   "name": "Piano Switch 2 Gang",
+   "groupName": "Lighting Control",
+   "productLineName": "Piano Series",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "1": 1,
+    "2": 2,
+    "3": 2,
+    "4": 4,
+    "5": 4,
+    "6": 7,
+    "7": 10,
+    "8": 12
+   }
+  },
+  {
+   "id": 19,
+   "name": "Piano Switch 3 Gang",
+   "groupName": "Lighting Control",
+   "productLineName": "Piano Series",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "1": 5,
+    "2": 7,
+    "3": 13,
+    "4": 18,
+    "5": 23,
+    "6": 30,
+    "7": 45,
+    "8": 60
+   }
+  },
+  {
+   "id": 6,
+   "name": "Floating Switch 1 Gang",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 7,
+   "name": "Floating Switch 2 Gang",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 8,
+   "name": "Floating Switch 3 Gang",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 9,
+   "name": "Floating Switch 4 Gang",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 20,
+   "name": "Smart Curtain Motor 1.5Nm",
+   "groupName": "Shading Control",
+   "productLineName": "Curtain Motor 1.5Nm, 6Nm",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 3,
+    "6": 4,
+    "7": 4,
+    "8": 6
+   }
+  },
+  {
+   "id": 21,
+   "name": "Smart Curtain Motor 6Nm",
+   "groupName": "Shading Control",
+   "productLineName": "Curtain Motor 1.5Nm, 6Nm",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 22,
+   "name": "Curtain Rail 1 meter",
+   "groupName": "Shading Control",
+   "productLineName": "Curtain Track",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 12,
+    "6": 20,
+    "7": 20,
+    "8": 30
+   }
+  },
+  {
+   "id": 23,
+   "name": "Smart Roller Blind 1.8Nm",
+   "groupName": "Shading Control",
+   "productLineName": "Roller Blind Motor 1.2Nm, 6Nm",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 24,
+   "name": "Smart Roller Blind 6Nm",
+   "groupName": "Shading Control",
+   "productLineName": "Roller Blind Motor 1.2Nm, 6Nm",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 25,
+   "name": "Anti Glare Smart Light 7w",
+   "groupName": "Smart Lighting Control",
+   "productLineName": "Smart Lights 7w",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 26,
+   "name": "Anti Glare Smart Light 10w",
+   "groupName": "Smart Lighting Control",
+   "productLineName": "Smart Lights 10w",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 27,
+   "name": "Door Window Sensor",
+   "groupName": "Smart Sensors",
+   "productLineName": "Door Sensor",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 4,
+    "6": 5,
+    "8": 7
+   }
+  },
+  {
+   "id": 28,
+   "name": "Motion Sensor",
+   "groupName": "Smart Sensors",
+   "productLineName": "Motion Sensor",
+   "usage": "standard",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 1,
+    "6": 2,
+    "8": 4
+   }
+  },
+  {
+   "id": 10,
+   "name": "Water Leakage Sensor",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 29,
+   "name": "Smoke Sensor",
+   "groupName": "Smart Sensors",
+   "productLineName": "Smart Smoke Sensor",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 30,
+   "name": "Temp and Humidity Sensor",
+   "groupName": "Entertainment & Climate Control",
+   "productLineName": "Temp. and Humidity Sensor",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 31,
+   "name": "Gas Sensor",
+   "groupName": "Smart Sensors",
+   "productLineName": "Smart Gas Sensor",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 32,
+   "name": "IR Remote Control",
+   "groupName": "Entertainment & Climate Control",
+   "productLineName": "Zigbee IR Blaster (for AC and TV control)",
+   "usage": "both",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "1": 2,
+    "2": 3,
+    "3": 3,
+    "4": 6,
+    "5": 7,
+    "6": 9,
+    "7": 10,
+    "8": 15
+   }
+  },
+  {
+   "id": 11,
+   "name": "Intercom Indoor Unit",
+   "groupName": null,
+   "productLineName": null,
+   "usage": "none",
+   "productId": null,
+   "productName": null,
+   "quantities": {}
+  },
+  {
+   "id": 33,
+   "name": "Intercom Outdoor Unit Gate Keeper",
+   "groupName": "Smart Intercom",
+   "productLineName": "Outdoor Station",
+   "usage": "premium",
+   "productId": null,
+   "productName": null,
+   "quantities": {
+    "5": 1,
+    "6": 1
+   }
+  }
+ ],
+ "lines": [
+  {
+   "name": "Hpad X Pro",
+   "groupName": "Touch Panel",
+   "usage": "premium"
+  },
+  {
+   "name": "Hpad Echo",
+   "groupName": "Touch Panel",
+   "usage": "both"
+  },
+  {
+   "name": "Hpad Q2",
+   "groupName": "Touch Panel",
+   "usage": "both"
+  },
+  {
+   "name": "Mini Gateway",
+   "groupName": "Touch Panel",
+   "usage": "standard"
+  },
+  {
+   "name": "Matter Gateway",
+   "groupName": "Touch Panel",
+   "usage": "premium"
+  },
+  {
+   "name": "Piano Series",
+   "groupName": "Lighting Control",
+   "usage": "standard"
+  },
+  {
+   "name": "Matrix Series",
+   "groupName": "Lighting Control",
+   "usage": "premium"
+  },
+  {
+   "name": "Fusion Series",
+   "groupName": "Lighting Control",
+   "usage": "premium"
+  },
+  {
+   "name": "Door Lock i5",
+   "groupName": "Smart Access",
+   "usage": "standard"
+  },
+  {
+   "name": "Door Lock i9 Pro",
+   "groupName": "Smart Access",
+   "usage": "premium"
+  },
+  {
+   "name": "Curtain Track",
+   "groupName": "Shading Control",
+   "usage": "both"
+  },
+  {
+   "name": "Curtain Motor 1.5Nm, 6Nm",
+   "groupName": "Shading Control",
+   "usage": "both"
+  },
+  {
+   "name": "Roller Blind Motor 1.2Nm, 6Nm",
+   "groupName": "Shading Control",
+   "usage": "both"
+  },
+  {
+   "name": "Zigbee IR Blaster (for AC and TV control)",
+   "groupName": "Entertainment & Climate Control",
+   "usage": "both"
+  },
+  {
+   "name": "Temp. and Humidity Sensor",
+   "groupName": "Entertainment & Climate Control",
+   "usage": "premium"
+  },
+  {
+   "name": "Smart Lights 7w",
+   "groupName": "Smart Lighting Control",
+   "usage": "standard"
+  },
+  {
+   "name": "Smart Lights 10w",
+   "groupName": "Smart Lighting Control",
+   "usage": "premium"
+  },
+  {
+   "name": "Door Sensor",
+   "groupName": "Smart Sensors",
+   "usage": "standard"
+  },
+  {
+   "name": "Motion Sensor",
+   "groupName": "Smart Sensors",
+   "usage": "standard"
+  },
+  {
+   "name": "Smart Gas Sensor",
+   "groupName": "Smart Sensors",
+   "usage": "both"
+  },
+  {
+   "name": "Smart Smoke Sensor",
+   "groupName": "Smart Sensors",
+   "usage": "premium"
+  },
+  {
+   "name": "Smart Panic Button",
+   "groupName": "Smart Sensors",
+   "usage": "premium"
+  },
+  {
+   "name": "Human Presence Sensor",
+   "groupName": "Smart Sensors",
+   "usage": "premium"
+  },
+  {
+   "name": "Outdoor Station",
+   "groupName": "Smart Intercom",
+   "usage": "premium"
+  }
+ ]
+}

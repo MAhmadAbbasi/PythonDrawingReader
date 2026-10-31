@@ -1,0 +1,79 @@
+# How the electrical points read from a drawing turn into the package items stored in the POS
+# (Inventory > Solution Packages). Items are named exactly as on the Package Quantities tab.
+#
+# The suggestion starts from the package of the building size (its quantities in the POS), then every item
+# below is replaced by what the drawing actually needs - but only when the drawing shows the points the rule
+# needs (otherwise the package quantity stays, and the result says so).
+#
+#   rule: per_point   quantity = points of `points` x multiplier / ratio      (rounded up)
+#         per_area    1 (x multiplier) for every area that has any of `points`, or is one of `room_types`
+#         per_floor   1 (x multiplier) per floor
+#         gangs       light/fan points of each area grouped onto switch boards of `max_gang` (3) ... 1 gang
+#   items: candidate item names, best first - the first one allowed in the chosen plan is used
+#          (Standard: Standard-only or both; Premium: Premium-only, or both once confirmed)
+#   room_types: bedroom, lounge, dining, kitchen, bath, dressing, corridor, store, garage, stairs,
+#               laundry, servant, study, lawn, balcony   (optional filter)
+
+rules:
+  - name: Switch boards
+    rule: gangs
+    points: [light, fan, exhaust_fan]
+    max_gang: 3
+    items:
+      3: ['Piano Switch 3 Gang', 'Floating Switch 3 Gang']
+      2: ['Piano Switch 2 Gang', 'Floating Switch 2 Gang']
+      1: ['Piano Switch 1 Gang', 'Floating Switch 1 Gang']
+
+  - name: AC / TV control
+    rule: per_area
+    points: [ac_point, tv_point]
+    items: ['IR Remote Control']
+
+  - name: Curtain motors
+    rule: per_point
+    points: [curtain]
+    items: ['Smart Curtain Motor 1.5Nm', 'Smart Curtain Motor 6Nm']
+
+  - name: Curtain rail
+    rule: per_point
+    points: [curtain]
+    multiplier: 4          # metres of rail per curtain
+    items: ['Curtain Rail 1 meter']
+
+  - name: Gas sensor
+    rule: per_area
+    room_types: [kitchen]
+    items: ['Gas Sensor']
+
+  - name: Smoke sensor
+    rule: per_area
+    room_types: [kitchen]
+    points: [smoke_detector]
+    items: ['Smoke Sensor']
+
+  - name: Motion sensor
+    rule: per_area
+    room_types: [corridor, stairs]
+    items: ['Motion Sensor']
+
+  - name: Temperature / humidity
+    rule: per_floor
+    items: ['Temp and Humidity Sensor']
+
+  - name: Main door lock
+    rule: per_point
+    points: [main_door]
+    items: ['Smart Lock i5', 'Smart Lock i9 Pro']
+
+  - name: Intercom
+    rule: per_point
+    points: [intercom]
+    items: ['Intercom Outdoor Unit Gate Keeper']
+
+# Plot size of a Marla / Kanal (sq ft) and how much of the plot a floor usually covers - used to
+# pick the building size when the drawing doesn't say it (e.g. "10 MARLA" in the title block)
+building_size:
+  sqft_per_marla: 225
+  marla_per_kanal: 20
+  floor_coverage: 0.8
+  bhk_max_sqft: 1800       # a single-floor plan this small with bedrooms is matched to a BHK size
