@@ -6,11 +6,8 @@ from pathlib import Path
 MAX_BYTES = 50 * 1024 * 1024
 
 SUPPORTED_MESSAGE = (
-    "Supported files: DXF (recommended), a PDF exported directly from AutoCAD/CAD software, or a PDF printed from "
-    "CAD (\"Print to PDF\" / Adobe PDF printer) - its text is read from the page image, which takes about a minute "
-    "per sheet the first time. Maximum size 50 MB. Not supported: DWG files (please save as DXF), scanned PDFs, "
-    "photos or images (JPG/PNG), hand-drawn plans, or password-protected PDFs. For best results, the drawing should "
-    "include a legend and room names."
+    "Supported: DXF (best), or a PDF exported or printed from AutoCAD/CAD (printed PDFs take longer). Max 50 MB. "
+    "Not supported: DWG (save as DXF), scanned PDFs, photos, hand-drawn or password-protected files."
 )
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".gif", ".webp"}
