@@ -218,3 +218,24 @@ def test_jobs(dxf):
         _t.sleep(0.1)
     assert s["status"] == "done" and s["result"]["totals"]["points"] == 51
     assert client.get("/jobs/nope").status_code == 404
+
+
+# ── another company's automation -> Matter gateways (last row) ──
+def test_matter_gateway(dxf, catalog):
+    ex = extract("sample.dxf", dxf)
+    other = {"company": "Sonoff", "areas": ["Ground Floor / LOUNGE", "First Floor / BED ROOM", "Ground Floor / LOUNGE"]}
+    for plan, choices in (("standard", None), ("premium", {})):
+        r = suggest(ex, catalog, plan, choices, other_brand=other)
+        last = r["lines"][-1]
+        assert last["name"] == "Matter Gateway" and last["quantity"] == 2 and last["source"] == "other"   # duplicates once
+        assert "Sonoff" in last["detail"] and set(last["areas"]) == {"Ground Floor / LOUNGE", "First Floor / BED ROOM"}
+        assert r["totals"]["quantity"] == sum(l["quantity"] for l in r["lines"])
+    # linked package item: used, with its product
+    cat = json.loads(json.dumps(catalog))
+    cat["items"].append({"id": 999, "name": "Matter Gateway Pro", "groupName": "Touch Panel", "productLineName": "Matter Gateway",
+                         "usage": "premium", "productId": 77, "productName": "MG product", "quantities": {}})
+    last = suggest(ex, cat, "standard", other_brand=other)["lines"][-1]
+    assert (last["itemId"], last["productId"], last["quantity"]) == (999, 77, 2)
+    # no areas / premium still asking: no gateway row
+    assert all(l["name"] != "Matter Gateway" for l in suggest(ex, catalog, "standard", other_brand={"company": "X", "areas": []})["lines"])
+    assert suggest(ex, catalog, "premium", None, other_brand=other)["needsConfirmation"]

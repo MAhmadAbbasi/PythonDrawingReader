@@ -108,11 +108,12 @@ class SuggestRequest(BaseModel):
     plan: str
     choices: dict[str, Any] | None = None
     sizeId: int | None = None
+    otherBrand: dict[str, Any] | None = None     # {company, areas[]}: another company's automation -> Matter gateways
 
 
 @app.post("/suggest", dependencies=[Depends(service_key)])
 def suggest_solution(req: SuggestRequest) -> dict:
     try:
-        return suggest(req.extraction, req.catalog, req.plan, req.choices, req.sizeId)
+        return suggest(req.extraction, req.catalog, req.plan, req.choices, req.sizeId, other_brand=req.otherBrand)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

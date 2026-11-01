@@ -86,9 +86,55 @@ def _derive(rule: dict, extraction: dict) -> tuple[bool, dict[str, dict[str, int
     return False, {}, f"unknown rule {kind!r}"
 
 
+MATTER_GATEWAY = "Matter Gateway"
+
+
+def _matter_gateway(other: dict, catalog: dict, lines: list[dict], left_out: list[dict], size: dict | None) -> dict | None:
+    """The client already uses another company's automation in some areas: one Matter gateway per such area lets
+    those products work with ours. It is the last row, in every plan (it is what the client's own devices need).
+    The package item is found by its categorization ("Matter Gateway" line) or its name; without one the row is
+    still shown, unlinked, so the quotation lists it to add by hand."""
+    areas = [str(a).strip() for a in (other.get("areas") or []) if str(a).strip()]
+    areas = list(dict.fromkeys(areas))
+    if not areas:
+        return None
+    company = str(other.get("company") or "").strip() or "another company"
+    want = norm(MATTER_GATEWAY)
+    items = catalog.get("items") or []
+    item = (next((i for i in items if norm(i.get("productLineName") or "") == want), None)
+            or next((i for i in items if want in norm(i["name"])), None))
+    line_info = next((l for l in catalog.get("lines") or [] if norm(l.get("name") or "") == want), None)
+    package_qty = 0
+    if item:   # already in the package: shown once, at the end
+        for bucket in (lines, left_out):
+            for l in [l for l in bucket if l["itemId"] == item["id"]]:
+                bucket.remove(l)
+                if bucket is lines:
+                    package_qty += l["quantity"]
+    n = len(areas)
+    return {
+        "itemId": item["id"] if item else 0,
+        "name": item["name"] if item else MATTER_GATEWAY,
+        "groupName": item.get("groupName") if item else (line_info or {}).get("groupName"),
+        "productLineName": MATTER_GATEWAY,
+        "usage": (item or {}).get("usage") or (line_info or {}).get("usage") or "none",
+        "productId": item.get("productId") if item else None,
+        "productName": item.get("productName") if item else None,
+        "quantity": n + package_qty,
+        "baseline": int(((item or {}).get("quantities") or {}).get(str(size["id"]), 0)) if size else 0,
+        "source": "other",
+        "detail": f"client uses {company} products in {n} area(s) - one Matter gateway per area"
+                  + (f" + {package_qty} from the package" if package_qty else ""),
+        "areas": {a: 1 for a in areas},
+        "otherCompany": company,
+    }
+
+
 def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = None,
-            size_id: int | None = None, rules: dict | None = None) -> dict:
-    """choices: None = not asked yet; else {item id (str/int): "use" | "skip" | id of a Premium-only item to use instead}"""
+            size_id: int | None = None, rules: dict | None = None, other_brand: dict | None = None) -> dict:
+    """choices: None = not asked yet; else {item id (str/int): "use" | "skip" | id of a Premium-only item to use instead}
+    other_brand: {"company": name, "areas": ["Ground Floor / Lounge", ...]} when the client uses another company's
+    automation in those areas -> a Matter Gateway row (last)"""
     plan = (plan or "").lower()
     if plan not in PLANS:
         raise ValueError("Choose the Standard or the Premium plan.")
@@ -202,6 +248,12 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
 
     order = {i["id"]: n for n, i in enumerate(items)}
     lines.sort(key=lambda l: order.get(l["itemId"], 0))
+    gateway = _matter_gateway(other_brand, catalog, lines, left_out, size) if other_brand and not to_confirm else None
+    if gateway:
+        lines.append(gateway)
+        if gateway["itemId"] == 0:
+            notes.append(f"{MATTER_GATEWAY}: add it as an item on the Package Quantities tab and link it to the inventory "
+                         "product, so quotations include it.")
     unlinked = [l for l in lines if l["productId"] is None]
     if unlinked and not to_confirm:
         notes.append(f"{len(unlinked)} item(s) are not linked to an inventory product - add them to the quotation yourself, "
