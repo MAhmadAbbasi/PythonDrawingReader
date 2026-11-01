@@ -1,4 +1,4 @@
-"""Upload checks: only DXF, or a vector PDF exported from CAD."""
+"""Upload checks: DXF, or a PDF of a CAD drawing (exported, or printed - then read with OCR)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,9 +6,11 @@ from pathlib import Path
 MAX_BYTES = 50 * 1024 * 1024
 
 SUPPORTED_MESSAGE = (
-    "Supported files: DXF (recommended) or a vector PDF exported directly from AutoCAD/CAD software. "
-    "Maximum size 50 MB. Not supported: DWG files (please save as DXF), scanned PDFs, photos or images (JPG/PNG), "
-    "hand-drawn plans, or password-protected PDFs. For best results, the drawing should include a legend and room names."
+    "Supported files: DXF (recommended), a PDF exported directly from AutoCAD/CAD software, or a PDF printed from "
+    "CAD (\"Print to PDF\" / Adobe PDF printer) - its text is read from the page image, which takes about a minute "
+    "per sheet the first time. Maximum size 50 MB. Not supported: DWG files (please save as DXF), scanned PDFs, "
+    "photos or images (JPG/PNG), hand-drawn plans, or password-protected PDFs. For best results, the drawing should "
+    "include a legend and room names."
 )
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".gif", ".webp"}
