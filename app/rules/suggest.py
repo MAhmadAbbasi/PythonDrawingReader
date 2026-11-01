@@ -1,8 +1,8 @@
 """The suggested solution for a reviewed drawing: the building size's package (from the POS), with the items the
 drawing's points decide replaced by what the drawing needs, filtered by the plan:
   Standard: Standard-only and "both" products - never asks
-  Premium:  Premium-only products; every "both" product is asked about first (use it / skip it / use a
-            Premium-only product of the same group instead)
+  Premium:  Premium-only products and "both" products; a "both" product that has a Premium-only product of
+            the same group is asked about first (use it / skip it / use the Premium-only product instead)
 Pure functions - no I/O."""
 from __future__ import annotations
 
@@ -226,6 +226,9 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
             else:
                 same = [a for a in items if a["id"] not in serves_same and a.get("groupName") and a.get("groupName") == i.get("groupName")]
             alternatives = [{"itemId": a["id"], "name": a["name"]} for a in same if a.get("usage") == "premium"]
+            if not alternatives:    # nothing Premium-only to swap it for: just use it, don't ask
+                lines.append(line(i, q))
+                continue
             if choices is None:
                 to_confirm.append(line(i, q, {"alternatives": alternatives}))
                 continue

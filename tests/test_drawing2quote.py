@@ -142,23 +142,22 @@ def test_standard_never_asks(dxf, catalog):
     assert usage <= {"standard", "both"}
 
 
-def test_premium_always_asks_first(dxf, catalog):
+def test_premium_asks_only_when_there_is_a_premium_alternative(dxf, catalog):
     ex = extract("sample.dxf", dxf)
     first = suggest(ex, catalog, "premium")
     assert first["needsConfirmation"] and first["lines"] == []
     asked = {c["name"]: c for c in first["toConfirm"]}
-    assert set(asked) == {"Smart Panel Q2", "Smart Curtain Motor 1.5Nm", "Curtain Rail 1 meter", "Gas Sensor", "IR Remote Control"}
+    # "both" products with no Premium-only alternative (curtain, gas, IR) are used without asking
+    assert set(asked) == {"Smart Panel Q2"}
     assert [a["name"] for a in asked["Smart Panel Q2"]["alternatives"]] == ["Smart Panel Hpad X Pro"]
-    assert asked["Gas Sensor"]["alternatives"] == []                           # smoke sensor serves other points
 
-    choices = {str(c["itemId"]): "use" for c in first["toConfirm"]}
-    choices[str(asked["Smart Panel Q2"]["itemId"])] = str(asked["Smart Panel Q2"]["alternatives"][0]["itemId"])
-    choices[str(asked["Gas Sensor"]["itemId"])] = "skip"
+    choices = {str(asked["Smart Panel Q2"]["itemId"]): str(asked["Smart Panel Q2"]["alternatives"][0]["itemId"])}
     r = suggest(ex, catalog, "premium", choices)
     got = lines(r)
     assert not r["needsConfirmation"]
     assert got["Smart Panel Hpad X Pro"] == 2 and "Smart Panel Q2" not in got   # replaced
-    assert "Gas Sensor" not in got and got["Smoke Sensor"] == 1 and got["Temp and Humidity Sensor"] == 2
+    assert got["Gas Sensor"] >= 1 and got["Smart Curtain Motor 1.5Nm"] >= 1 and got["IR Remote Control"] >= 1
+    assert got["Smoke Sensor"] == 1 and got["Temp and Humidity Sensor"] == 2
     assert "Piano Switch 3 Gang" not in got                                     # Standard only
     assert any("no Premium item for 3-gang" in n for n in r["notes"])
     assert {l["usage"] for l in r["lines"]} <= {"premium", "both"}
