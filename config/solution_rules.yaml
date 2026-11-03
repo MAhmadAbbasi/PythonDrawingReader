@@ -8,7 +8,10 @@
 #   rule: per_point   quantity = points of `points` x multiplier / ratio      (rounded up)
 #         per_area    1 (x multiplier) for every area that has any of `points`, or is one of `room_types`
 #         per_floor   1 (x multiplier) per floor
-#         gangs       light/fan points of each area grouped onto switch boards of `max_gang` (3) ... 1 gang
+#         gangs       switch boards for EVERY area, grouped onto boards of `max_gang` (3) ... 1 gang:
+#                       the switches drawn in the area (`switch_points`, one gang each); if none are drawn, one
+#                       gang per load point (`points`); if the area shows no lights/fans at all, the loads are
+#                       estimated from its room type and size (`estimate`)
 #   items: candidate item names, best first - the first one allowed in the chosen plan is used
 #          (Standard: Standard-only or both; Premium: Premium-only, or both once confirmed)
 #   room_types: bedroom, lounge, dining, kitchen, bath, dressing, corridor, store, garage, stairs,
@@ -17,8 +20,21 @@
 rules:
   - name: Switch boards
     rule: gangs
+    switch_points: [switch]
     points: [light, fan, exhaust_fan]
     max_gang: 3
+    estimate:                # an area with no lights/fans drawn: its loads, from the room type and size
+      sqft_per_light: 60     # one light per 60 sq ft (at least 1)
+      lights:                # when the size is unknown
+        bedroom: 4
+        lounge: 6
+        dining: 4
+        kitchen: 3
+        study: 3
+        lawn: 4
+        other: 2
+      fan: [bedroom, lounge, dining, study, servant]
+      exhaust_fan: [kitchen, bath, laundry]
     items:
       3: ['Piano Switch 3 Gang', 'Floating Switch 3 Gang']
       2: ['Piano Switch 2 Gang', 'Floating Switch 2 Gang']

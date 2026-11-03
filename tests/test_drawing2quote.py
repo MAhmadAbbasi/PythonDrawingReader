@@ -239,3 +239,29 @@ def test_matter_gateway(dxf, catalog):
     # no areas / premium still asking: no gateway row
     assert all(l["name"] != "Matter Gateway" for l in suggest(ex, catalog, "standard", other_brand={"company": "X", "areas": []})["lines"])
     assert suggest(ex, catalog, "premium", None, other_brand=other)["needsConfirmation"]
+
+
+def test_switches_for_every_area(catalog):
+    from app.rules.suggest import _gangs, load_rules
+    rule = next(r for r in load_rules()["rules"] if r["rule"] == "gangs")
+    ex = {"floors": [{"name": "Ground Floor", "areas": [
+        {"name": "LOUNGE", "roomType": "lounge", "areaSqft": 300, "items": {"switch": 4, "light": 9}},   # switches drawn: used
+        {"name": "DINING", "roomType": "dining", "areaSqft": 150, "items": {"light": 2, "fan": 1}},      # loads drawn
+        {"name": "BED", "roomType": "bedroom", "areaSqft": 180, "items": {}},                            # nothing: 3 lights + fan
+        {"name": "KITCHEN", "roomType": "kitchen", "areaSqft": None, "items": {"socket_5A": 2}},         # 3 lights + exhaust
+        {"name": "Unassigned", "roomType": None, "areaSqft": None, "items": {}},
+    ]}]}
+    applies, per_area, why = _gangs(rule, ex)
+    g = "Ground Floor / "
+    assert applies
+    assert per_area["3"] == {g + "LOUNGE": 1, g + "DINING": 1, g + "BED": 1, g + "KITCHEN": 1}
+    assert per_area["1"] == {g + "LOUNGE": 1, g + "BED": 1, g + "KITCHEN": 1}
+    assert "4 switch(es) drawn in 1 area(s)" in why and "estimated for 2 area(s)" in why
+    assert not any("Unassigned" in k for v in per_area.values() for k in v)
+
+    # a drawing with rooms but no lights/fans at all still gets switch boards (not just the package figure)
+    bare = {"project": {}, "floors": [{"name": "Ground Floor", "areas": [
+        {"name": "BED", "roomType": "bedroom", "areaSqft": 120, "items": {}}]}]}
+    r = suggest(bare, catalog, "standard")
+    assert lines(r).get("Piano Switch 3 Gang") == 1 and lines(r).get("Piano Switch 1 Gang") is None   # 2 lights + fan
+

@@ -41,20 +41,7 @@ def _derive(rule: dict, extraction: dict) -> tuple[bool, dict[str, dict[str, int
     kind = rule.get("rule")
     per_area: dict[str, dict[str, int]] = {}
     if kind == "gangs":
-        top = int(rule.get("max_gang", 3))
-        total = 0
-        for f, a in _areas(extraction):
-            n = sum(int(a.get("items", {}).get(p, 0)) for p in points)
-            total += n
-            if n <= 0:
-                continue
-            key = f"{f['name']} / {a['name']}"
-            full, rest = divmod(n, top)
-            if full:
-                per_area.setdefault(str(top), {})[key] = full
-            if rest:
-                per_area.setdefault(str(rest), {})[key] = 1
-        return total > 0, per_area, f"{total} {'/'.join(points)} point(s) on switch boards of up to {top}"
+        return _gangs(rule, extraction)
     if kind == "per_point":
         total = 0
         for f, a in _areas(extraction):
@@ -84,6 +71,52 @@ def _derive(rule: dict, extraction: dict) -> tuple[bool, dict[str, dict[str, int
             per_area.setdefault("", {})[f["name"]] = math.ceil(mult)
         return len(floors) > 0, per_area, f"{len(floors)} floor(s)"
     return False, {}, f"unknown rule {kind!r}"
+
+
+def _estimated_loads(area: dict, est: dict) -> int:
+    """light/fan/exhaust points an area without any drawn probably has (room type and size)"""
+    room = area.get("roomType") or "other"
+    sqft = area.get("areaSqft") or 0
+    lights = max(1, math.ceil(sqft / float(est.get("sqft_per_light", 60)))) if sqft else         int((est.get("lights") or {}).get(room, (est.get("lights") or {}).get("other", 2)))
+    return lights + (room in (est.get("fan") or [])) + (room in (est.get("exhaust_fan") or []))
+
+
+def _gangs(rule: dict, extraction: dict) -> tuple[bool, dict[str, dict[str, int]], str]:
+    """Switch boards for every area: the switches drawn there, else its load points, else estimated loads"""
+    top = int(rule.get("max_gang", 3))
+    loads = rule.get("points") or []
+    switches = rule.get("switch_points") or []
+    est = rule.get("estimate")
+    per_area: dict[str, dict[str, int]] = {}
+    counts = {"switch": [0, 0], "load": [0, 0], "estimate": [0, 0]}     # basis -> [areas, gangs]
+    for f, a in _areas(extraction):
+        items = a.get("items", {})
+        drawn_switches = sum(int(items.get(p, 0)) for p in switches)
+        drawn_loads = sum(int(items.get(p, 0)) for p in loads)
+        if drawn_switches > 0:
+            n, basis = drawn_switches, "switch"
+        elif drawn_loads > 0:
+            n, basis = drawn_loads, "load"
+        elif est is not None and a.get("name") != "Unassigned" and f.get("name") != "Roof":    # no lights/fans drawn
+            n, basis = _estimated_loads(a, est), "estimate"
+        else:
+            continue
+        counts[basis][0] += 1
+        counts[basis][1] += n
+        key = f"{f['name']} / {a['name']}"
+        full, rest = divmod(n, top)
+        if full:
+            per_area.setdefault(str(top), {})[key] = full
+        if rest:
+            per_area.setdefault(str(rest), {})[key] = 1
+    why = []
+    if counts["switch"][0]:
+        why.append(f"{counts['switch'][1]} switch(es) drawn in {counts['switch'][0]} area(s)")
+    if counts["load"][0]:
+        why.append(f"{counts['load'][1]} {'/'.join(loads)} point(s) in {counts['load'][0]} area(s)")
+    if counts["estimate"][0]:
+        why.append(f"about {counts['estimate'][1]} load(s) estimated for {counts['estimate'][0]} area(s) with no lights/fans drawn")
+    return bool(per_area), per_area, "; ".join(why) + f" - on switch boards of up to {top}"
 
 
 MATTER_GATEWAY = "Matter Gateway"
