@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MAX_BYTES = 50 * 1024 * 1024
+MAX_MB = 200     # keep the same in the POS: DrawingService.MaxBytes, web.config, drawingService.ts
+MAX_BYTES = MAX_MB * 1024 * 1024
 
 SUPPORTED_MESSAGE = (
-    "Supported: DXF (best), or a PDF exported or printed from AutoCAD/CAD (printed PDFs take longer). Max 50 MB. "
+    f"Supported: DXF (best), or a PDF exported or printed from AutoCAD/CAD (printed PDFs take longer). Max {MAX_MB} MB. "
     "Not supported: DWG (save as DXF), scanned PDFs, photos, hand-drawn or password-protected files."
 )
 
@@ -23,7 +24,7 @@ def check(file_name: str, data: bytes) -> str:
     if not data:
         raise RejectedFile("The file is empty.")
     if len(data) > MAX_BYTES:
-        raise RejectedFile(f"The file is {len(data) / 1024 / 1024:.1f} MB - the maximum is 50 MB.")
+        raise RejectedFile(f"The file is {len(data) / 1024 / 1024:.1f} MB - the maximum is {MAX_MB} MB.")
     if ext == ".dwg" or data[:4] in (b"AC10", b"AC1."):
         raise RejectedFile("DWG files can't be read. In AutoCAD use Save As -> DXF and upload the DXF file.")
     if ext in IMAGE_EXT or data[:3] == b"\xff\xd8\xff" or data[:8] == b"\x89PNG\r\n\x1a\n":

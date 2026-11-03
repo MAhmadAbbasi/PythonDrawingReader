@@ -50,8 +50,9 @@ def test_rejected_files(name, data, words):
 
 
 def test_too_big():
-    with pytest.raises(RejectedFile, match="maximum is 50 MB"):
-        extract("big.dxf", b"0\nSECTION\n" + b" " * (50 * 1024 * 1024))
+    from app.extract.validator import MAX_BYTES, MAX_MB
+    with pytest.raises(RejectedFile, match=f"maximum is {MAX_MB} MB"):
+        extract("big.dxf", b"0\nSECTION\n" + b" " * MAX_BYTES)
 
 
 def test_scanned_pdf_rejected():
