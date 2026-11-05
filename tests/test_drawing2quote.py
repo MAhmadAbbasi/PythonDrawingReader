@@ -176,7 +176,7 @@ def test_premium_asks_only_when_there_is_a_premium_alternative(dxf, catalog):
     assert got["Gas Sensor"] >= 1 and got["Smart Curtain Motor 1.5Nm"] >= 1 and got["IR Remote Control"] >= 1
     assert got["Smoke Sensor"] == 1 and got["Temp and Humidity Sensor"] == 2
     assert "Piano Switch 3 Gang" not in got                                     # Standard only
-    assert any("no Premium item for 3-gang" in n for n in r["notes"])
+    assert any("no Premium product for 3-gang" in n for n in r["notes"])
     assert {l["usage"] for l in r["lines"]} <= {"premium", "both"}
 
 
@@ -243,17 +243,18 @@ def test_matter_gateway(dxf, catalog):
     for plan, choices in (("standard", None), ("premium", {})):
         r = suggest(ex, catalog, plan, choices, other_brand=other)
         last = r["lines"][-1]
-        assert last["name"] == "Matter Gateway" and last["quantity"] == 2 and last["source"] == "other"   # duplicates once
+        assert last["name"] == "Matter gateway" and last["quantity"] == 2 and last["source"] == "other"   # duplicates once
         assert "Sonoff" in last["detail"] and set(last["areas"]) == {"Ground Floor / LOUNGE", "First Floor / BED ROOM"}
         assert r["totals"]["quantity"] == sum(l["quantity"] for l in r["lines"])
-    # linked package item: used, with its product
+    # the company's product for the "Matter gateway" rule: used, with its SKU
     cat = json.loads(json.dumps(catalog))
     cat["items"].append({"id": 999, "name": "Matter Gateway Pro", "groupName": "Touch Panel", "productLineName": "Matter Gateway",
                          "usage": "premium", "productId": 77, "productName": "MG product", "quantities": {}})
+    cat["ruleItems"]["Matter gateway"] = {"": [999]}
     last = suggest(ex, cat, "standard", other_brand=other)["lines"][-1]
     assert (last["itemId"], last["productId"], last["quantity"]) == (999, 77, 2)
     # no areas / premium still asking: no gateway row
-    assert all(l["name"] != "Matter Gateway" for l in suggest(ex, catalog, "standard", other_brand={"company": "X", "areas": []})["lines"])
+    assert all(l["name"] != "Matter gateway" for l in suggest(ex, catalog, "standard", other_brand={"company": "X", "areas": []})["lines"])
     assert suggest(ex, catalog, "premium", None, other_brand=other)["needsConfirmation"]
 
 
@@ -281,3 +282,30 @@ def test_switches_for_every_area(catalog):
     r = suggest(bare, catalog, "standard")
     assert lines(r).get("Piano Switch 3 Gang") == 1 and lines(r).get("Piano Switch 1 Gang") is None   # 2 lights + fan
 
+
+
+# ── products come from the company's catalogue (ids), never from names in the rules file ──
+def test_rules_use_the_company_products(dxf, catalog):
+    from app.rules.suggest import load_rules, rule_list
+    assert all("items" not in r for r in load_rules()["rules"])          # no product names in the config
+    names = {r["name"]: r["gangs"] for r in rule_list()}
+    assert names["Switch boards"] == ["3", "2", "1"] and names["Gas sensor"] == [""] and "Matter gateway" in names
+    ex = extract("sample.dxf", dxf)
+    cat = json.loads(json.dumps(catalog))
+    gas = next(i for i in cat["items"] if i["name"] == "Gas Sensor")
+    gas["name"] = "Combustible gas detector"                          # renamed: still found by its id
+    got = {l["itemId"]: l["quantity"] for l in suggest(ex, cat, "standard")["lines"]}
+    assert got.get(gas["id"]) == 1
+    cat["ruleItems"]["Gas sensor"] = {"": []}                          # no product for the rule: package quantity, and a note
+    r = suggest(ex, cat, "standard")
+    assert any("Gas sensor: no product is chosen" in n for n in r["notes"])
+
+
+def test_fractional_package_quantities(catalog):
+    cat = json.loads(json.dumps(catalog))
+    rail = next(i for i in cat["items"] if i["name"] == "Curtain Rail 1 meter")
+    size = cat["sizes"][0]
+    rail["quantities"] = {str(size["id"]): 12.5}
+    ex = {"project": {}, "floors": [{"name": "Ground Floor", "areas": [{"name": "LOUNGE", "roomType": "lounge", "areaSqft": 200, "items": {}}]}]}
+    lines = suggest(ex, cat, "standard", size_id=size["id"])["lines"]
+    assert next(l for l in lines if l["itemId"] == rail["id"])["quantity"] == 12.5

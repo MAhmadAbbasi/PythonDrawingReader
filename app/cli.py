@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         catalog = json.loads(Path(args.catalog).read_text(encoding="utf8"))
     elif args.db and args.tenant:
         from .catalog_db import load_catalog
-        catalog = load_catalog(args.db, args.tenant)
+        catalog = load_catalog(args.db, args.tenant, args.plan)
     else:
         ap.error("--plan needs --catalog, or --db with --tenant")
     choices = None

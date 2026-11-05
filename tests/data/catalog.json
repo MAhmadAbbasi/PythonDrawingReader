@@ -564,5 +564,71 @@
    "groupName": "Smart Intercom",
    "usage": "premium"
   }
- ]
+ ],
+ "ruleItems": {
+  "Switch boards": {
+   "3": [
+    19,
+    8
+   ],
+   "2": [
+    18,
+    7
+   ],
+   "1": [
+    17,
+    6
+   ]
+  },
+  "AC / TV control": {
+   "": [
+    32
+   ]
+  },
+  "Curtain motors": {
+   "": [
+    20,
+    21
+   ]
+  },
+  "Curtain rail": {
+   "": [
+    22
+   ]
+  },
+  "Gas sensor": {
+   "": [
+    31
+   ]
+  },
+  "Smoke sensor": {
+   "": [
+    29
+   ]
+  },
+  "Motion sensor": {
+   "": [
+    28
+   ]
+  },
+  "Temperature / humidity": {
+   "": [
+    30
+   ]
+  },
+  "Main door lock": {
+   "": [
+    15,
+    16
+   ]
+  },
+  "Intercom": {
+   "": [
+    33
+   ]
+  },
+  "Matter gateway": {
+   "": []
+  }
+ }
 }

@@ -21,6 +21,40 @@ def load_rules(path: Path | None = None) -> dict:
     return yaml.safe_load((path or CONFIG_DIR / "solution_rules.yaml").read_text(encoding="utf8")) or {}
 
 
+def _qty(value) -> float | int:
+    """A package quantity (decimal in the POS, e.g. 12.5 m of rail): a whole number stays an int"""
+    try:
+        q = float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return int(q) if q.is_integer() else round(q, 3)
+
+
+def rule_list(rules: dict | None = None) -> list[dict]:
+    """The drawing rules a company maps its products to (Solution Packages > Drawing rules): name, the gangs a
+    rule has ("" = one list), what it counts - and the Matter gateway (one per area of another company's automation)"""
+    rules = rules if rules is not None else load_rules()
+    out = []
+    for r in rules.get("rules") or []:
+        gangs = [str(g) for g in range(int(r.get("max_gang", 3)), 0, -1)] if r.get("rule") == "gangs" else [""]
+        out.append({"name": r.get("name") or r.get("rule"), "rule": r.get("rule"), "gangs": gangs,
+                    "points": r.get("points") or [], "roomTypes": r.get("room_types") or []})
+    out.append({"name": MATTER_GATEWAY, "rule": "other_brand", "gangs": [""], "points": [], "roomTypes": []})
+    return out
+
+
+def _candidates(rule: dict, catalog: dict, by_id: dict, by_name: dict) -> dict[str, list[dict]]:
+    """{gang/"": catalogue items, best first}: the company's products for this rule (catalog["ruleItems"], by id);
+    a rule may also name items itself (tests, the command line)"""
+    name = rule.get("name") or rule.get("rule")
+    mapped = (catalog.get("ruleItems") or {}).get(name)
+    if mapped is not None:
+        return {str(g): [by_id[int(i)] for i in ids if int(i) in by_id] for g, ids in mapped.items()}
+    named = rule.get("items") or []
+    groups = {str(k): v for k, v in named.items()} if isinstance(named, dict) else {"": named}
+    return {g: [by_name[norm(n)] for n in names if norm(n) in by_name] for g, names in groups.items()}
+
+
 def usable(usage: str, plan: str) -> bool:
     """Can go in the plan at all (a "both" product still needs confirming for Premium)"""
     return usage == "both" or usage == plan
@@ -119,24 +153,24 @@ def _gangs(rule: dict, extraction: dict) -> tuple[bool, dict[str, dict[str, int]
     return bool(per_area), per_area, "; ".join(why) + f" - on switch boards of up to {top}"
 
 
-MATTER_GATEWAY = "Matter Gateway"
+MATTER_GATEWAY = "Matter gateway"   # the rule's name; its product is the company's (ruleItems)
 
 
 def _matter_gateway(other: dict, catalog: dict, lines: list[dict], left_out: list[dict], size: dict | None) -> dict | None:
     """The client already uses another company's automation in some areas: one Matter gateway per such area lets
     those products work with ours. It is the last row, in every plan (it is what the client's own devices need).
-    The package item is found by its categorization ("Matter Gateway" line) or its name; without one the row is
-    still shown, unlinked, so the quotation lists it to add by hand."""
+    The product is the one the company mapped to the "Matter gateway" rule; without one the row is still shown,
+    unlinked, so the quotation lists it to add by hand."""
     areas = [str(a).strip() for a in (other.get("areas") or []) if str(a).strip()]
     areas = list(dict.fromkeys(areas))
     if not areas:
         return None
     company = str(other.get("company") or "").strip() or "another company"
-    want = norm(MATTER_GATEWAY)
     items = catalog.get("items") or []
-    item = (next((i for i in items if norm(i.get("productLineName") or "") == want), None)
-            or next((i for i in items if want in norm(i["name"])), None))
-    line_info = next((l for l in catalog.get("lines") or [] if norm(l.get("name") or "") == want), None)
+    by_id = {i["id"]: i for i in items}
+    mapped = _candidates({"name": MATTER_GATEWAY}, catalog, by_id, {}).get("", [])
+    item = mapped[0] if mapped else None
+    line_info = None
     package_qty = 0
     if item:   # already in the package: shown once, at the end
         for bucket in (lines, left_out):
@@ -149,12 +183,12 @@ def _matter_gateway(other: dict, catalog: dict, lines: list[dict], left_out: lis
         "itemId": item["id"] if item else 0,
         "name": item["name"] if item else MATTER_GATEWAY,
         "groupName": item.get("groupName") if item else (line_info or {}).get("groupName"),
-        "productLineName": MATTER_GATEWAY,
+        "productLineName": (item or {}).get("productLineName") or MATTER_GATEWAY,
         "usage": (item or {}).get("usage") or (line_info or {}).get("usage") or "none",
         "productId": item.get("productId") if item else None,
         "productName": item.get("productName") if item else None,
         "quantity": n + package_qty,
-        "baseline": int(((item or {}).get("quantities") or {}).get(str(size["id"]), 0)) if size else 0,
+        "baseline": _qty(((item or {}).get("quantities") or {}).get(str(size["id"]), 0)) if size else 0,
         "source": "other",
         "detail": f"client uses {company} products in {n} area(s) - one Matter gateway per area"
                   + (f" + {package_qty} from the package" if package_qty else ""),
@@ -183,22 +217,21 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
     areas: dict[int, dict[str, int]] = {}
     serves_same: dict[int, set[int]] = {}   # items of one rule serve the same points (Premium alternatives)
     for i in items:
-        base = int((i.get("quantities") or {}).get(str(size["id"]), 0)) if size else 0
+        base = _qty((i.get("quantities") or {}).get(str(size["id"]), 0)) if size else 0
         qty[i["id"]] = base
         source[i["id"]] = "package"
         detail[i["id"]] = f"{size['name']} package" if size else "no package size"
 
     # the drawing decides the items it has points for
+    by_id_all = {i["id"]: i for i in items}
     for rule in rules.get("rules") or []:
         name = rule.get("name") or rule.get("rule")
         applies, per_area, why = _derive(rule, extraction)
-        candidates = rule.get("items")
-        groups = {str(k): v for k, v in candidates.items()} if isinstance(candidates, dict) else {"": candidates or []}
+        candidates = _candidates(rule, catalog, by_id_all, by_name)
         if not applies:
             notes.append(f"{name}: the drawing shows none of the points this needs - the package quantity is kept.")
             continue
-        for gang, names in groups.items():
-            found = [by_name[norm(n)] for n in names if norm(n) in by_name]
+        for gang, found in candidates.items():
             for i in found:
                 serves_same.setdefault(i["id"], set()).update(f["id"] for f in found if f["id"] != i["id"])
             pick = next((i for i in found if usable(i.get("usage", "none"), plan)), None)
@@ -219,15 +252,15 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
                 if all(i.get("usage") == other for i in found):
                     notes.append(f"{name}: {'/'.join(i['name'] for i in found)} is {other.title()} only - not in a {plan.title()} package.")
                 else:
-                    notes.append(f"{name}: no {plan.title()} item for {label}{'/'.join(names)} - categorize one for "
+                    notes.append(f"{name}: no {plan.title()} product for {label}{'/'.join(i['name'] for i in found)} - categorize one for "
                                  f"{plan.title()} on the Product Categorization tab (needed: {sum(wanted.values())}).")
-            if not found:
-                notes.append(f"{name}: none of {', '.join(names)} is in your package items.")
+        if not any(candidates.values()) and applies:
+            notes.append(f"{name}: no product is chosen for this drawing rule - choose them on Solution Packages > Drawing rules.")
 
     def line(i: dict, q: int, extra: dict | None = None) -> dict:
         out = {"itemId": i["id"], "name": i["name"], "groupName": i.get("groupName"), "productLineName": i.get("productLineName"),
                "usage": i.get("usage", "none"), "productId": i.get("productId"), "productName": i.get("productName"),
-               "quantity": q, "baseline": int((i.get("quantities") or {}).get(str(size["id"]), 0)) if size else 0,
+               "quantity": q, "baseline": _qty((i.get("quantities") or {}).get(str(size["id"]), 0)) if size else 0,
                "source": source[i["id"]], "detail": detail[i["id"]], "areas": areas.get(i["id"], {})}
         if extra:
             out.update(extra)
@@ -288,12 +321,10 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
     if gateway:
         lines.append(gateway)
         if gateway["itemId"] == 0:
-            notes.append(f"{MATTER_GATEWAY}: add it as an item on the Package Quantities tab and link it to the inventory "
-                         "product, so quotations include it.")
+            notes.append(f"{MATTER_GATEWAY}: choose its product on Solution Packages > Drawing rules, so quotations include it.")
     unlinked = [l for l in lines if l["productId"] is None]
     if unlinked and not to_confirm:
-        notes.append(f"{len(unlinked)} item(s) are not linked to an inventory product - add them to the quotation yourself, "
-                     "or link them on the Package Quantities tab.")
+        notes.append(f"{len(unlinked)} item(s) are not in the inventory (not on the price list) - their price is entered on the quotation.")
     return {
         "plan": plan,
         "size": size,

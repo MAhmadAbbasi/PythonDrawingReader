@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from .extract import RejectedFile, SUPPORTED_MESSAGE, extract, ocr
 from .extract.validator import MAX_BYTES, check
-from .rules.suggest import suggest
+from .rules.suggest import rule_list, suggest
 
 app = FastAPI(title="Drawing2Quote", version="1.0")
 
@@ -109,6 +109,12 @@ class SuggestRequest(BaseModel):
     choices: dict[str, Any] | None = None
     sizeId: int | None = None
     otherBrand: dict[str, Any] | None = None     # {company, areas[]}: another company's automation -> Matter gateways
+
+
+@app.get("/rules", dependencies=[Depends(service_key)])
+def rules() -> list[dict]:
+    """The drawing rules (config/solution_rules.yaml) a company chooses its products for: name, gangs, points"""
+    return rule_list()
 
 
 @app.post("/suggest", dependencies=[Depends(service_key)])
