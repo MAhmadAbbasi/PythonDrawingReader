@@ -54,6 +54,13 @@ def test_cad_pdf_without_legend(tmp_path):
     assert ex["totals"]["points"] == 0
     assert {a["name"] for a in ex["floors"][0]["areas"]} == set(cad_fixture.EXPECTED)
     assert any("repeated symbol shape" in w for w in ex["warnings"])
+    assert ex["electrical"] is False and ex["warnings"][0].startswith("Not an electrical drawing")
+
+
+def test_electrical_drawing_is_flagged(cad):
+    ex = extract("plan.pdf", cad)
+    assert ex["electrical"] is True
+    assert not any(w.startswith("Not an electrical drawing") for w in ex["warnings"])
 
 
 def test_overlay(cad):

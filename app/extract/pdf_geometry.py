@@ -454,7 +454,7 @@ class RoomFinder:
         """The box around the building: the biggest connected mass of solid walls (None without solid walls)"""
         if not self.sets or not self.sets[0][1]:
             return None
-        polys = shapely.buffer(shapely.polygons([st.pts for st in self.sets[0][1]]), 0)
+        polys = shapely.buffer(np.array([shapely.Polygon(st.pts) for st in self.sets[0][1]], dtype=object), 0)
         mass = shapely.union_all(shapely.buffer(polys, 2 * self.ft, quad_segs=1))
         # a building can fall apart into a few wall masses (open or double-height spaces between them): all big ones
         parts = sorted(shapely.get_parts(mass), key=lambda g: -g.area)
@@ -505,7 +505,7 @@ class RoomFinder:
             # solid walls (often painted as many thin slivers): their area, thickened to close door openings
             mass = self._mass.get(k)
             if mass is None:
-                polys = shapely.buffer(shapely.polygons([st.pts for st in solid]), 0)
+                polys = shapely.buffer(np.array([shapely.Polygon(st.pts) for st in solid], dtype=object), 0)
                 mass = self._mass[k] = shapely.union_all(shapely.buffer(polys, self.eps, quad_segs=1))
             geoms.append(mass.buffer(gap / 2, quad_segs=2))
         walls = shapely.union_all(geoms)

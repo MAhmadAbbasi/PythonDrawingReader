@@ -72,7 +72,7 @@ ROOM_TYPES = [
     ("dining", [r"DINING"]),
     ("lounge", [r"LOUNGE", r"LIVING", r"DRAWING", r"\bT ?V\b", r"FAMILY", r"SITTING", r"\bHALL\b"]),
     ("corridor", [r"CORRIDOR", r"PASSAGE", r"LOBBY", r"FOYER", r"ENTRANCE", r"GALLERY"]),
-    ("stairs", [r"\bSTAIR", r"\bLIFT\b", r"\bELEVATOR\b"]),
+    ("stairs", [r"\bSTAIR", r"\bLIFT\b", r"\bELEVATOR\b", r"\bMUMTY\b"]),
     ("store", [r"\bSTORE", r"\bSTORAGE\b"]),
     ("garage", [r"GARAGE", r"\bPORCH\b", r"CAR PARK", r"PARKING"]),
     ("laundry", [r"LAUNDRY", r"\bWASH AREA\b", r"\bUTILITY\b"]),
@@ -80,6 +80,7 @@ ROOM_TYPES = [
     ("study", [r"\bSTUDY\b", r"\bOFFICE\b", r"LIBRARY", r"\bPRAYER\b"]),
     ("lawn", [r"\bLAWN\b", r"\bGARDEN\b", r"\bCOURT ?YARD\b", r"\bPATIO\b"]),
     ("balcony", [r"BALCONY", r"\bTERRACE\b", r"\bVERANDAH?\b"]),
+    ("other", [r"^ROOM \d+$"]),          # a space enclosed by walls whose name could not be read (pictures)
 ]
 
 
@@ -110,7 +111,8 @@ def parse_dimensions(text: str) -> tuple[str, float] | None:
     m = DIM_METRE.search(t)
     if m:
         return t, round(float(m.group(1)) * float(m.group(2)) * 10.7639, 1)
-    m = DIM_FEET.search(t.upper())
+    # (OCR: an inch mark read as "*" - 11-7* X7-2")
+    m = DIM_FEET.search(re.sub(r"(\d\s*-\s*\d+(?:\.\d+)?)\s*\*(?=\s*[xX×])", r'\1"', t).upper())
     if not m:
         return None
     a = float(m.group(1)) + float(m.group(2) or 0) / 12
@@ -258,9 +260,16 @@ class Sheet:
     confidence_penalty: float = 0.0        # e.g. PDF symbol matching is less certain than DXF blocks
     snap: float = 0.0                      # a point this close outside a room (drawn on its wall) is in that room
     debug: dict = field(default_factory=dict)   # what the reader saw, for the checking overlay
+    # several drawings on one sheet: (floor / section name, (x0, y0, x1, y1)) of each floor plan or area plan
+    views: list[tuple[str, tuple]] = field(default_factory=list)
 
 
 def _nearest_floor(sheet: Sheet, x: float, y: float) -> str:
+    if sheet.views:                       # the drawing it is drawn in
+        inside = [(name, b) for name, b in sheet.views if b[0] <= x <= b[2] and b[1] <= y <= b[3]]
+        if inside:
+            return min(inside, key=lambda v: (v[1][2] - v[1][0]) * (v[1][3] - v[1][1]))[0]
+        return min(sheet.views, key=lambda v: (max(v[1][0] - x, 0, x - v[1][2]) ** 2 + max(v[1][1] - y, 0, y - v[1][3]) ** 2))[0]
     if not sheet.floor_titles:
         return sheet.default_floor
     return min(sheet.floor_titles, key=lambda f: (f[1] - x) ** 2 + (f[2] - y) ** 2)[0]
@@ -296,6 +305,9 @@ def _add(areas: list[dict], new: dict) -> None:
 def assemble(sheets: list[Sheet], log: list[str], warnings: list[str]) -> list[dict]:
     """Rooms and their point counts per floor, plus an "Unassigned" area for points outside every room"""
     floors: dict[str, list[dict]] = {}
+    for sheet in sheets:                  # every floor plan drawn is listed, even when no room in it could be read
+        for name, _ in sheet.views:
+            floors.setdefault(name, [])
     for sheet_no, sheet in enumerate(sheets):
         areas: list[tuple[Room, dict, dict]] = []   # room, counts, info
         for room in sheet.rooms:
@@ -367,7 +379,10 @@ def assemble(sheets: list[Sheet], log: list[str], warnings: list[str]) -> list[d
         for a in areas:
             if a["name"] != "Unassigned" and a["confidence"] < 0.7:
                 warnings.append(f"{name} / {a['name']}: low confidence ({a['confidence']}) - check its counts.")
-        result.append({"name": name, "areas": areas})
+        if not areas:
+            warnings.append(f"{name}: drawn, but no room in it could be read - add its rooms by hand.")
+        result.append({"name": name, "areas": areas,
+                       "areaSqft": round(sum(a.get("areaSqft") or 0 for a in areas), 1)})
         log.append(f"{name}: {len([a for a in areas if a['name'] != 'Unassigned'])} room(s), "
                    f"{sum(sum(a['items'].values()) for a in areas)} point(s)")
     return result

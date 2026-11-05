@@ -37,9 +37,9 @@ def counts(ex):
 # ── upload rules ──
 @pytest.mark.parametrize("name,data,words", [
     ("plan.dwg", b"AC1027" + b"\0" * 100, "Save As -> DXF"),
-    ("photo.jpg", b"\xff\xd8\xff\xe0" + b"\0" * 100, "Photos and images"),
-    ("plan.png", b"\x89PNG\r\n\x1a\n" + b"\0" * 100, "Photos and images"),
-    ("plan.heic", b"\0" * 100, "Photos and images"),
+    ("photo.jpg", b"\xff\xd8\xff\xe0" + b"\0" * 100, "damaged or not a picture"),
+    ("plan.png", b"\x89PNG\r\n\x1a\n" + b"\0" * 100, "damaged or not a picture"),
+    ("plan.heic", b"\0" * 100, "HEIC photos"),
     ("plan.docx", b"PK\x03\x04", "not supported"),
     ("plan.dxf", b"hello", "not a valid DXF"),
     ("empty.pdf", b"", "empty"),
@@ -55,13 +55,29 @@ def test_too_big():
         extract("big.dxf", b"0\nSECTION\n" + b" " * MAX_BYTES)
 
 
-def test_scanned_pdf_rejected():
+def test_scanned_pdf_and_pictures_accepted():
+    from app.extract.validator import check
     doc = pymupdf.open()
     page = doc.new_page()
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), 0)
     page.insert_image(page.rect, pixmap=pix)
-    with pytest.raises(RejectedFile, match="appears to be scanned"):
-        extract("scan.pdf", doc.tobytes())
+    assert check("scan.pdf", doc.tobytes()) == "scan"          # read from the image
+    big = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 900, 700), 0)
+    big.clear_with(255)
+    assert check("plan.png", big.tobytes("png")) == "image"
+
+
+def test_tiny_picture_rejected():
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 120, 90), 0)
+    with pytest.raises(RejectedFile, match="too small"):
+        extract("plan.png", pix.tobytes("png"))
+
+
+def test_empty_pdf_rejected():
+    doc = pymupdf.open()
+    doc.new_page()
+    with pytest.raises(RejectedFile, match="no drawing"):
+        extract("blank.pdf", doc.tobytes())
 
 
 def test_password_pdf_rejected():

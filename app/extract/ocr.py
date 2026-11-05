@@ -109,24 +109,104 @@ def _dedupe(words: list[tuple[str, float, tuple]]) -> list[tuple[str, float, tup
     return kept
 
 
-def page_lines(page: pymupdf.Page, doc_hash: str) -> list[tuple[Text, pymupdf.Rect]]:
-    """Text lines read from the page image, in the coordinates of the page as shown (rotation applied)"""
-    key = hashlib.sha1(f"v2:{doc_hash}:{page.number}:{DPI}:{TILE}".encode()).hexdigest()
-    cache = _cache_dir() / f"{key}.json"
-    words = None
+def _cached_words(key: str, image) -> list[tuple[str, float, tuple]]:
+    """the words of an image (text, confidence, pixel box), read once: image() gives the RGB array when needed"""
+    cache = _cache_dir() / f"{hashlib.sha1(key.encode()).hexdigest()}.json"
     if cache.exists():
         try:
-            words = [(t, c, tuple(b)) for t, c, b in json.loads(cache.read_text(encoding="utf8"))]
+            return [(t, c, tuple(b)) for t, c, b in json.loads(cache.read_text(encoding="utf8"))]
         except Exception:
-            words = None
-    if words is None:
-        pix = page.get_pixmap(dpi=DPI, alpha=False)
-        img = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3]
-        words = _dedupe([w for w in _read_image(img) if w[1] >= MIN_CONFIDENCE and w[0].strip()])
-        cache.write_text(json.dumps(words), encoding="utf8")
-    zoom = DPI / 72
+            pass
+    words = _dedupe([w for w in _read_image(image()) if w[1] >= MIN_CONFIDENCE and w[0].strip()])
+    cache.write_text(json.dumps(words), encoding="utf8")
+    return words
+
+
+def image_words(img: np.ndarray) -> list[tuple[str, float, tuple]]:
+    """the words of a picture or scanned page (RGB array): (text, confidence, (x0, y0, x1, y1) in pixels)"""
+    key = f"img1:{hashlib.sha1(img.tobytes()).hexdigest()}:{img.shape}:{TILE}"
+    return _cached_words(key, lambda: img)
+
+
+def to_lines(words, pt_per_px: float) -> list[tuple[Text, pymupdf.Rect]]:
+    """OCR words (pixel boxes) as text lines in PDF points, misreadings of drawing words corrected"""
     out = []
     for text, _, (x0, y0, x1, y1) in words:
-        r = pymupdf.Rect(x0 / zoom, y0 / zoom, x1 / zoom, y1 / zoom)
-        out.append((Text(text.strip(), (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, r.height * 0.8), r))
+        r = pymupdf.Rect(x0 * pt_per_px, y0 * pt_per_px, x1 * pt_per_px, y1 * pt_per_px)
+        out.append((Text(correct(text.strip()), (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, r.height * 0.8), r))
     return out
+
+
+# words of room names, legends and titles: small or blurred text is often read a letter or two off
+# ("LIVIRG LOLNGE", "DRAWNG", "MOINZNKITCIEN") and words run together ("CARPARKING")
+VOCABULARY = sorted(set("""
+KITCHEN LOUNGE LIVING DRAWING DINING BEDROOM BED ROOM MASTER GUEST BATH BATHROOM TOILET DRESS DRESSING WASHROOM
+POWDER PASSAGE LOBBY FOYER ENTRANCE CORRIDOR GALLERY STAIR STAIRS STAIRCASE STORE STORAGE GARAGE PORCH PARKING
+LAUNDRY UTILITY SERVANT QUARTER QUARTERS DRIVER STUDY OFFICE LIBRARY PRAYER LAWN GARDEN COURTYARD PATIO
+TERRACE BALCONY VERANDAH PANTRY FAMILY SITTING HALL MODERN ISLAND DOUBLE HEIGHT FRONT BACK AREA KIDS LIFT
+LIGHT LIGHTS SWITCH SOCKET POWER CEILING EXHAUST POINT BOARD DISTRIBUTION LEGEND SYMBOL SYMBOLS DESCRIPTION
+FLOOR GROUND FIRST SECOND THIRD BASEMENT PLAN LAYOUT ELECTRICAL CURTAIN CAR
+""".split()), key=len, reverse=True)
+_VOCAB_SET = set(VOCABULARY)
+
+
+def _close(a: str, b: str) -> float:
+    import difflib
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def correct(text: str) -> str:
+    """drawing words misread by OCR put right; anything else is left as it was"""
+    out = []
+    for token in text.split(" "):
+        word = token.upper()
+        if len(word) < 4 or not word.isalpha() or word in _VOCAB_SET:
+            out.append(token)
+            continue
+        best = max(((_close(word, v), v) for v in VOCABULARY if abs(len(v) - len(word)) <= 2), default=(0, ""))
+        if best[0] >= 0.8:
+            out.append(best[1])
+            continue
+        if len(word) >= 7:                # several words run together: the drawing words found in it
+            pieces, i, known, rest = [], 0, 0, ""
+            while i < len(word):
+                # a word spelt right first (the longest), else one a letter off with the same first and last letters
+                hit = next(((v, len(v)) for v in VOCABULARY if word.startswith(v, i)), None)
+                if hit is None:
+                    for v in VOCABULARY:
+                        if len(v) < 5:
+                            continue
+                        for n in (len(v), len(v) - 1, len(v) + 1):
+                            part = word[i:i + n]
+                            if len(part) == n and part[0] == v[0] and part[-1] == v[-1] and _close(part, v) >= 0.84:
+                                hit = (v, n)
+                                break
+                        if hit:
+                            break
+                if hit:
+                    if rest:
+                        pieces.append(rest)        # letters that are no drawing word stay as they were
+                        rest = ""
+                    pieces.append(hit[0])
+                    known += hit[1]
+                    i += hit[1]
+                else:
+                    rest += word[i]
+                    i += 1
+            if rest:
+                pieces.append(rest)
+            if known >= 0.4 * len(word) and any(len(p) >= 4 and p in _VOCAB_SET for p in pieces):
+                out.append(" ".join(pieces))
+                continue
+        out.append(token)
+    return " ".join(out)
+
+
+def page_lines(page: pymupdf.Page, doc_hash: str) -> list[tuple[Text, pymupdf.Rect]]:
+    """Text lines read from the page image, in the coordinates of the page as shown (rotation applied)"""
+    def image():
+        pix = page.get_pixmap(dpi=DPI, alpha=False)
+        return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3]
+
+    words = _cached_words(f"v2:{doc_hash}:{page.number}:{DPI}:{TILE}", image)
+    return to_lines(words, 72 / DPI)

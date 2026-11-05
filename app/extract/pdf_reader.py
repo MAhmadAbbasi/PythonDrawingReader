@@ -18,8 +18,9 @@ import os
 import re
 import statistics
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, wait
 
+import cv2
 import numpy as np
 import pymupdf
 import shapely
@@ -115,8 +116,15 @@ def _title_text(text: str) -> bool:
 def _room_labels(lines, legend_rect, skip: set[int]) -> list[tuple[str, str, pymupdf.Rect, float]]:
     """(name, room type, text box, text height); a name on two lines ("MASTER" / "BED ROOM") is one label.
     skip: texts that are symbols ("AC", the "TV" inside a TV point symbol)"""
+    dims = [r for t, r in lines if parse_dimensions(t.text)]
+
+    def sized(r) -> bool:                 # a room size written right under it ("MUMTY" / "11'-7" X 7'-2"")
+        # (-0.5: OCR boxes can overlap a little)
+        return any(-0.5 * r.height <= d.y0 - r.y1 < 2.5 * r.height and abs((d.x0 + d.x1) / 2 - (r.x0 + r.x1) / 2) < max(d.width, r.width)
+                   for d in dims)
+
     free = [(t, r) for k, (t, r) in enumerate(lines) if k not in skip and not (legend_rect and legend_rect.intersects(r))
-            and not floor_name(t.text) and not _title_text(t.text)]
+            and (not floor_name(t.text) or (room_type(t.text) and sized(r))) and not _title_text(t.text)]
     used: set[int] = set()
     labels = []
     for i, (t, r) in enumerate(free):
@@ -253,6 +261,168 @@ def _legend_table(lines, items: list[geo.Stroke], mapper: SymbolMapper):
     return out
 
 
+# titles of the drawings on a sheet that are not floor plans (floor plans are named by floor_name)
+VIEW_TITLE = [
+    (re.compile(r"\bELEVATIONS?\b"), "elevation"),
+    (re.compile(r"\bSECTIONS?\b(?! CUT)"), "section"),
+    (re.compile(r"\bAREA PLAN\b|\bAREA CHART\b"), "area"),
+    (re.compile(r"\bSITE PLAN\b|\bLOCATION PLAN\b|\bKEY PLAN\b"), "site"),
+    (re.compile(r"\bDETAILS?\b"), "detail"),
+]
+NOT_PLAN = {"elevation", "section", "site", "detail"}
+
+
+def _view_title(text: str) -> tuple[str, str] | None:
+    """(name, kind) when the text is the title of a drawing on the sheet: a floor plan ("GROUND FLOOR PLAN",
+    kind "plan"), an elevation, a section, an area plan ..."""
+    n = norm(text)
+    if not n or len(n.split()) > 7:
+        return None
+    for pattern, kind in VIEW_TITLE:
+        if pattern.search(n):
+            return " ".join(w.capitalize() for w in n.split()), kind
+    if floor := floor_name(text):
+        return floor, "plan"
+    return None
+
+
+def _views(items: list[geo.Stroke], lines, page_rect, legend_rect) -> list[dict]:
+    """The separate drawings on a sheet (several floor plans, an elevation, a section, an area plan side by side):
+    blocks of drawing with clear paper between them, each named by the title written under (or in) it.
+    [{name, kind: plan | area | elevation | section | site | detail | other, bbox, titled}]"""
+    W, H = page_rect.width, page_rect.height
+    g = max(1.0, min(W, H) / 600)                  # grid cell (points)
+    gw, gh = int(W / g) + 2, int(H / g) + 2
+    canvas = np.zeros((gh, gw), np.uint8)
+    for s in items:
+        x0, y0, x1, y1 = s.bbox
+        if x1 - x0 > 0.8 * W or y1 - y0 > 0.8 * H:
+            continue                               # the sheet frame and title block borders
+        if legend_rect and s.inside(tuple(legend_rect)):
+            continue
+        pts = np.round(np.asarray(s.pts) / g).astype(np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [pts], False, 1, 1)
+    gap = max(3, int(0.012 * min(W, H) / g))
+    joined = cv2.dilate(canvas, np.ones((gap, gap), np.uint8))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(joined, connectivity=8)
+    boxes = []
+    for i in range(1, n):
+        x, y, w, h, _ = stats[i]
+        if min(w, h) * g >= 0.12 * min(W, H):     # (a title block strip or a note is not a drawing)
+            boxes.append([x * g, y * g, (x + w) * g, (y + h) * g])
+    # drawings overlapping each other are one
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                a, b = boxes[i], boxes[j]
+                if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                    boxes[i] = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
+                    del boxes[j]
+                    merged = True
+                    break
+            if merged:
+                break
+    titles = [(vt, r) for t, r in lines if (vt := _view_title(t.text)) and not (legend_rect and legend_rect.intersects(r))]
+    # two drawings drawn close together join into one block: two titles side by side under it split it again
+    split = []
+    for b in boxes:
+        under = sorted((r.x0 + r.x1) / 2 for _, r in titles
+                       if b[0] <= (r.x0 + r.x1) / 2 <= b[2] and -0.25 * (b[3] - b[1]) <= (r.y0 + r.y1) / 2 - b[3] <= 0.12 * H)
+        xs = [x for i, x in enumerate(under) if i == 0 or x - under[i - 1] > 0.25 * (b[2] - b[0])]
+        cuts = [b[0]] + [(a + c) / 2 for a, c in zip(xs, xs[1:])] + [b[2]]
+        split += [[cuts[i], b[1], cuts[i + 1], b[3]] for i in range(len(cuts) - 1)]
+    views = [{"bbox": tuple(b), "name": None, "kind": "other", "titled": False} for b in split]
+    # titles: under the drawing (or inside it, near its foot), across its middle; the nearest such drawing
+    for (name, kind), r in sorted(titles, key=lambda tr: -tr[1].height):
+        cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+        best = None
+        for v in views:
+            x0, y0, x1, y1 = v["bbox"]
+            if v["titled"] or not (x0 - 0.1 * (x1 - x0) <= cx <= x1 + 0.1 * (x1 - x0)):
+                continue
+            below = cy - y1                         # under its foot (negative: inside it)
+            if -0.25 * (y1 - y0) <= below <= 0.12 * H:
+                d = abs(below)
+                if best is None or d < best[0]:
+                    best = (d, v)
+        if best is None:                           # a title written beside the drawing: the nearest one, close by
+            for v in views:
+                x0, y0, x1, y1 = v["bbox"]
+                d = ((max(x0 - cx, 0, cx - x1)) ** 2 + (max(y0 - cy, 0, cy - y1)) ** 2) ** 0.5
+                if not v["titled"] and d <= 0.15 * W and (best is None or d < best[0]):
+                    best = (d, v)
+        if best:
+            best[1].update(name=name, kind=kind, titled=True)
+    return views
+
+
+def legend_rows(lines, mapper: SymbolMapper) -> list[tuple[str, str, pymupdf.Rect]]:
+    """(type, description, where its symbol is drawn) for each legend row - for pictures, whose symbols are
+    matched as images (raster_reader). A table legend (SYMBOL | DESCRIPTION) wins over plain rows."""
+    table: list[tuple[str, str, pymupdf.Rect]] = []
+    heads = [(t, r) for t, r in lines if re.fullmatch(r"SYMBOLS?", norm(t.text))]
+    descs = [(t, r) for t, r in lines if norm(t.text).startswith("DESCRIPTION")]
+    for sh, sr in heads:
+        cy = (sr.y0 + sr.y1) / 2
+        right = [(t, r) for t, r in descs if r.x0 > sr.x1 and r.x0 - sr.x1 < 60 * sr.height and abs((r.y0 + r.y1) / 2 - cy) < sr.height]
+        if not right:
+            continue
+        dt, dr = min(right, key=lambda tr: tr[1].x0)
+        cells = sorted(((t, r) for t, r in lines if r.y0 > sr.y1 and sr.x1 < r.x0 < (dr.x0 + dr.x1) / 2), key=lambda tr: tr[1].y0)
+        rows: list[list] = []
+        last_y = sr.y1
+        for t, r in cells:
+            if rows and abs((r.y0 + r.y1) / 2 - (rows[-1][0][1].y0 + rows[-1][0][1].y1) / 2) < r.height / 2:
+                rows[-1].append((t, r))
+                continue
+            if r.y0 - last_y > 8 * max(r.height, 2):
+                break
+            rows.append([(t, r)])
+            last_y = r.y1
+        if not rows:
+            continue
+        centres = [(row[0][1].y0 + row[0][1].y1) / 2 for row in rows]
+        pitch = statistics.median(np.diff(centres)) if len(centres) > 1 else 3 * rows[0][0][1].height
+        left = sr.x0 - 1.5 * sr.width
+        for row, y in zip(rows, centres):
+            desc = " ".join(t.text for t, _ in sorted(row, key=lambda tr: tr[1].x0))
+            kind = mapper.classify(desc)
+            if kind:
+                x_end = min(r.x0 for _, r in row) - 0.5
+                table.append((kind, desc, pymupdf.Rect(left, y - 0.5 * pitch, x_end, y + 0.5 * pitch)))
+    if table:
+        return table
+    out = []
+    for title, tr in [(t, r) for t, r in lines if LEGEND_TITLE.match(norm(t.text))]:
+        below = sorted(((t, r) for t, r in lines if r.y0 > tr.y0 + 1 and tr.x0 - 4 * tr.height < r.x0 < tr.x0 + 6 * tr.height),
+                       key=lambda tr_: tr_[1].y0)
+        rows, last = [], tr
+        for t, r in below:
+            if r.y0 - last.y1 > 3 * r.height:
+                break
+            last = r
+            # a short text with a description to its right on the same line is a symbol ("AC"), not a row
+            if len(t.text.strip()) <= 4 and any(o is not t and o2.x0 > r.x1 and o2.x0 - r.x1 < 8 * r.height
+                                                and abs((o2.y0 + o2.y1) / 2 - (r.y0 + r.y1) / 2) < r.height / 2
+                                                for o, o2 in lines):
+                continue
+            rows.append((t, r))
+        # each row's symbol lies left of its text, up to halfway to the rows above and below
+        mids = [(r.y0 + r.y1) / 2 for _, r in rows]
+        for i, (t, r) in enumerate(rows):
+            kind = mapper.classify(t.text)
+            if not kind:
+                continue
+            hh = r.height
+            top = (mids[i - 1] + mids[i]) / 2 if i else mids[i] - 1.5 * hh
+            bottom = (mids[i] + mids[i + 1]) / 2 if i + 1 < len(rows) else mids[i] + 1.5 * hh
+            out.append((kind, t.text, pymupdf.Rect(r.x0 - 6 * hh, max(top, mids[i] - 1.5 * hh), r.x0 - 0.5,
+                                                   min(bottom, mids[i] + 1.5 * hh))))
+    return out
+
+
 def _dots(sym: geo.Symbol, dot_kinds: dict[str, tuple[str, float]]) -> tuple[str, int] | None:
     """(type, how many) when the symbol is a blob of touching dots of a dot-drawn legend type"""
     if not sym.filled or sym.color not in dot_kinds:
@@ -308,8 +478,10 @@ def _drop_word_outlines(items: list[geo.Stroke], lines) -> list[geo.Stroke]:
     return [s for i, s in enumerate(items) if i not in drop]
 
 
-def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, allow_no_legend: bool) -> dict:
-    """Rooms and points of one page. Without a legend (and not allowed) only {"legend": False} comes back."""
+def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, allow_no_legend: bool,
+               given_points: list[PointItem] | None = None, given_outlines: list | None = None) -> dict:
+    """Rooms and points of one page. Without a legend (and not allowed) only {"legend": False} comes back.
+    given_points: the symbols were already found (a picture: matched as images) - only rooms are read here."""
     page = doc[page_no - 1]
     texts = [t for t, _ in lines]
     drawings = page.get_drawings()
@@ -334,6 +506,8 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
         if len({name for name, _, _ in titles}) == 1:
             titles = titles[:1]
         page_floor = titles[0][0] if len(titles) == 1 else f"Page {page_no}"
+    if given_points is not None:          # (the legend was read from the picture itself)
+        allow_no_legend = True
     if not (shapes or text_symbols) and not allow_no_legend:
         return {"page": page_no, "legend": False, "rows": rows}
     lr = tuple(legend_rect) if legend_rect else None
@@ -346,8 +520,9 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
     # strokes in the legend symbols' colours only; all of them when the legend is in black / one colour
     colours = {s.color for s, _ in shapes if s.color}
     dark = {c for c in colours if all(int(v) <= 2 for v in c.split(","))}
-    found = geo.find_symbols(plan_items, max_size, gap, colours if colours - dark else None,
-                             max_line=1.5 * statistics.median(sizes) if sizes else None)
+    found = [] if given_points is not None else geo.find_symbols(
+        plan_items, max_size, gap, colours if colours - dark else None,
+        max_line=1.5 * statistics.median(sizes) if sizes else None)
     short_texts = [(k, t) for k, (t, r) in enumerate(lines)
                    if len(t.text.strip()) <= 4 and not (legend_rect and legend_rect.intersects(r))]
     # point types drawn as a filled dot (switches): the area of one dot, per colour
@@ -355,7 +530,7 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
     for sym, kind in shapes:
         if sym.filled and sym.fill_area > 0 and sym.color:
             dot_kinds.setdefault(sym.color, (kind, sym.fill_area))
-    points: list[PointItem] = []
+    points: list[PointItem] = list(given_points or [])
     unknown: list[geo.Symbol] = []
     symbol_texts: set[int] = set()        # indexes into lines: texts that are (part of) a symbol
     for sym in found:
@@ -379,7 +554,7 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
             points.append(PointItem(kind, t.x, t.y))
             symbol_texts.add(k)
     unknown_groups = []
-    if not shapes:
+    if not shapes and given_points is None:
         unknown_groups = geo.group_same_shapes(unknown[:1500])
         if unknown_groups:
             warns.append(f"Page {page_no}: {len(unknown_groups)} repeated symbol shape(s) found but not counted (no "
@@ -388,13 +563,36 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
 
     # Step 4 - rooms
     labels = _room_labels(lines, legend_rect, symbol_texts)
+    # several drawings on one sheet (floor plans side by side, an elevation, a section, an area plan): each is a
+    # floor / section of its own; names in elevations and sections are not rooms
+    views = _views(items, lines, page.rect, legend_rect)
+    multi = len(views) >= 2 and sum(v["titled"] for v in views) >= 2     # (a title block title alone is not it)
+    if multi:
+        def view_of(x: float, y: float):
+            return next((v for v in views if v["bbox"][0] <= x <= v["bbox"][2] and v["bbox"][1] <= y <= v["bbox"][3]), None)
+        plans = 0
+        for v in views:
+            inside = [lb for lb in labels if view_of((lb[2].x0 + lb[2].x1) / 2, (lb[2].y0 + lb[2].y1) / 2) is v]
+            if not v["titled"] and inside:
+                v["kind"] = "plan"
+            if v["kind"] == "plan" and not v["titled"]:
+                plans += 1
+                v["name"] = f"Plan {plans} (untitled)"
+            if v["kind"] in NOT_PLAN or v["kind"] == "other":
+                v["name"] = v["name"] or "Other drawing"
+        labels = [lb for lb in labels if (v := view_of((lb[2].x0 + lb[2].x1) / 2, (lb[2].y0 + lb[2].y1) / 2))
+                  and v["kind"] == "plan"]
+        points = [p for p in points if not ((v := view_of(p.x, p.y)) and v["kind"] in NOT_PLAN)]
+        logs.append(f"Page {page_no}: {len(views)} drawings on the sheet - " + ", ".join(
+            f"{v['name']} ({'floor plan' if v['kind'] == 'plan' else v['kind'] + (' - not a floor plan' if v['kind'] in NOT_PLAN else '')})"
+            for v in views))
     ft = 72 * 12 / scale if scale else _feet_guess(labels, page)
     forbidden = [(t.x, t.y) for t in texts if floor_name(t.text) or LEGEND_TITLE.match(norm(t.text)) or _title_text(t.text)]
     if legend_rect:
         forbidden.append(((legend_rect.x0 + legend_rect.x1) / 2, (legend_rect.y0 + legend_rect.y1) / 2))
     area_range = (12, 6000) if scale else (2, 30000)
     finder = geo.RoomFinder(plan_items, page.rect, ft, area_range)
-    building = finder.footprint()
+    building = None if multi else finder.footprint()      # (several drawings: their own areas did that above)
     if building:            # names outside the building's walls (title block, notes, details) are not rooms
         bx0, by0, bx1, by1 = building
         labels = [lb for lb in labels if bx0 <= (lb[2].x0 + lb[2].x1) / 2 <= bx1 and by0 <= (lb[2].y0 + lb[2].y1) / 2 <= by1]
@@ -418,6 +616,20 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
                 ft = better
                 outlines = geo.RoomFinder(plan_items, page.rect, ft, area_range).find(centres, forbidden)
             logs.append(f"Page {page_no}: no scale written - worked out from {len(ratios)} room(s) with dimensions")
+
+    # rooms not traced: a room outline found in the picture itself (raster_reader) around the name
+    if given_outlines:
+        from shapely.geometry import Point, Polygon
+        shapes_ = [p for p in (Polygon(o).buffer(0) for o in given_outlines if len(o) >= 3) if not p.is_empty]
+        for i, (name, kind, rect, h) in enumerate(labels):
+            c = Point((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2)
+            inside = [p for p in shapes_ if p.contains(c)]
+            if not inside:
+                continue
+            best = min(inside, key=lambda p: p.area)
+            # (also when the traced outline is a small part of it: furniture around the name, not the room)
+            if outlines[i] is None or outlines[i].area < 0.4 * best.area:
+                outlines[i] = best
 
     # rooms not traced: the smallest drawn rectangle around the name
     boxes = []
@@ -444,7 +656,9 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
         if poly is not None:
             traced += 1
         else:
-            around = [b for b in boxes if b.contains(pymupdf.Point(cx, cy)) and b.width * b.height < page.rect.width * page.rect.height * 0.5]
+            # (a room is far bigger than its name: a rectangle hardly wider than the name is furniture - a table)
+            around = [b for b in boxes if b.contains(pymupdf.Point(cx, cy)) and b.width * b.height < page.rect.width * page.rect.height * 0.5
+                      and b.width >= 2 * rect.width and b.height >= 3 * rect.height]
             if around:
                 b = min(around, key=lambda b: b.width * b.height)
                 poly = box(b.x0, b.y0, b.x1, b.y1)
@@ -456,6 +670,15 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
             dims = next((d for t, r, d in dims_texts if abs(t.x - cx) < 6 * h and 0 <= r.y0 - rect.y0 < 3 * h + rect.height), None)
         area = dims[1] if dims else (round(poly.area * sqft, 1) if poly is not None and sqft else None)
         rooms.append(Room(name, poly, cx, cy, kind, dims[0] if dims else None, area))
+    # spaces found in a picture with no name read ("ROOM n"): one smaller than any real room is a gap in the
+    # furniture or the lettering - left out; the rest numbered again
+    if any(re.fullmatch(r"ROOM \d+", r.name) for r in rooms):
+        rooms = [r for r in rooms if not (re.fullmatch(r"ROOM \d+", r.name) and r.area_sqft is not None and r.area_sqft < 25)]
+        k = 0
+        for r in rooms:
+            if re.fullmatch(r"ROOM \d+", r.name):
+                k += 1
+                r.name = f"ROOM {k}"
     # two labels in the same rectangle: keep the room outline only for the first
     seen: set = set()
     for room in rooms:
@@ -465,14 +688,30 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
                 room.poly = None
             seen.add(key)
 
+    # an area plan (the covered area split into parts "A 6'-6" x 7'-0"" ...): each size written in it is an area
+    if multi:
+        for v in [v for v in views if v["kind"] == "area"]:
+            x0, y0, x1, y1 = v["bbox"]
+            k = 0
+            for t, r, d in dims_texts:
+                cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+                if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+                    continue
+                k += 1
+                tag = next((o.text.strip() for o, orr in lines if re.fullmatch(r"[A-Z]\d?", o.text.strip())
+                            and 0 < r.y0 - orr.y1 < 4 * r.height and abs((orr.x0 + orr.x1) / 2 - cx) < r.width), None)
+                rooms.append(Room(f"Area {tag or k}", None, cx, cy, None, d[0], d[1]))
+
     counts = Counter(p.kind for p in points)
     logs.append(f"Page {page_no} ({page_floor}): legend {len(shapes) + len(text_symbols)} symbol(s), {len(rooms)} room(s) "
                f"({traced} traced from walls), {len(found)} symbol shape(s) checked; "
                + (", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "no points"))
     sheet = Sheet(default_floor=page_floor, rooms=rooms, points=points,
-                  floor_titles=titles if len(titles) > 1 else [], confidence_penalty=0.1, snap=2.0 * ft,
-                  debug={"page": page_no - 1, "legend": legend_rect, "unknown": unknown_groups})
-    return {"page": page_no, "legend": bool(shapes or text_symbols), "rows": rows, "sheet": sheet,
+                  floor_titles=[] if multi else (titles if len(titles) > 1 else []), confidence_penalty=0.1,
+                  snap=2.0 * ft, views=[(v["name"], v["bbox"]) for v in views if multi and v["kind"] in ("plan", "area")],
+                  debug={"page": page_no - 1, "legend": legend_rect, "unknown": unknown_groups,
+                         "views": [{"page": page_no, "name": v["name"], "kind": v["kind"]} for v in views] if multi else []})
+    return {"page": page_no, "legend": bool(shapes or text_symbols) or given_points is not None, "rows": rows, "sheet": sheet,
             "log": logs, "warnings": warns}
 
 
@@ -487,39 +726,79 @@ def _worker_init(data: bytes, mapper: SymbolMapper) -> None:
     _worker_mapper = mapper
 
 
-def _worker(page_no: int, lines, used_ocr: bool, allow: bool) -> dict:
-    return _read_page(_worker_doc, page_no, lines, used_ocr, _worker_mapper, allow)
+def _worker(page_no: int, lines, used_ocr: bool, allow: bool, points, outlines) -> dict:
+    return _read_page(_worker_doc, page_no, lines, used_ocr, _worker_mapper, allow, points, outlines)
 
 
-def _read_pages(data: bytes, doc, jobs: list[tuple[int, list, bool]], mapper: SymbolMapper, allow: bool) -> list[dict]:
-    workers = min(len(jobs), max(1, (os.cpu_count() or 2) - 1), int(os.environ.get("D2Q_WORKERS", "8")))
+def _read_pages(data: bytes, doc, jobs: list[tuple[int, list, bool]], mapper: SymbolMapper, allow: bool,
+                points_of: dict | None = None, outlines_of: dict | None = None) -> list[dict]:
+    points_of = points_of or {}
+    outlines_of = outlines_of or {}
+    workers = min(len(jobs), max(1, (os.cpu_count() or 2) - 1), int(os.environ.get("D2Q_WORKERS", "8")),
+                  _workers_for_memory(len(data)))
+    done: dict[int, dict] = {}
     if workers > 1:
+        ctx = multiprocessing.get_context("spawn")
+        pool = None
         try:
-            ctx = multiprocessing.get_context("spawn")
-            with ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(data, mapper)) as pool:
-                return list(pool.map(_worker, *zip(*[(n, ln, o, allow) for n, ln, o in jobs])))
+            pool = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(data, mapper))
+            futures = {pool.submit(_worker, n, ln, o, allow, points_of.get(n), outlines_of.get(n)): n for n, ln, o in jobs}
+            pending = set(futures)
+            while pending:
+                finished, pending = wait(pending, timeout=2)
+                for f in finished:
+                    done[futures[f]] = f.result()
+                # a worker that died (out of memory while starting ...) can leave the pool waiting for ever
+                if pending and any(p.exitcode is not None for p in list(getattr(pool, "_processes", {}).values())):
+                    break
         except Exception:
-            pass                          # no worker processes here: read one by one
-    return [_read_page(doc, n, ln, o, mapper, allow) for n, ln, o in jobs]
+            pass                          # no worker processes here (or one failed): the rest one by one
+        finally:
+            if pool is not None:
+                for p in list(getattr(pool, "_processes", {}).values()):
+                    if p.exitcode is None:
+                        p.terminate()
+                pool.shutdown(wait=False, cancel_futures=True)
+    return [done[n] if n in done else _read_page(doc, n, ln, o, mapper, allow, points_of.get(n), outlines_of.get(n))
+            for n, ln, o in jobs]
+
+
+def _workers_for_memory(data_size: int) -> int:
+    """How many page-reading processes the free memory allows (each holds the PDF and its own Python, ~300 MB)"""
+    try:
+        import psutil
+        free = psutil.virtual_memory().available
+    except Exception:
+        return 8
+    return max(1, int(0.7 * free // (300 * 2 ** 20 + 3 * data_size)))
 
 
 def read(data: bytes, mapper: SymbolMapper, log: list[str], warnings: list[str],
-         pages: list[int] | None = None) -> tuple[dict, list[Sheet], list[dict]]:
-    """pages: 1-based page numbers to read (all when None)"""
+         pages: list[int] | None = None, ocr_lines: dict[int, list] | None = None,
+         points_of: dict[int, list[PointItem]] | None = None,
+         outlines_of: dict[int, list] | None = None) -> tuple[dict, list[Sheet], list[dict]]:
+    """pages: 1-based page numbers to read (all when None).
+    ocr_lines: page number -> text lines already read by OCR (a drawing traced from a picture: raster_reader)
+    points_of: page number -> the points already found there (a picture's symbols, matched as images)"""
     doc = pymupdf.open(stream=data, filetype="pdf")
     doc_hash = hashlib.sha1(data).hexdigest()
     project: dict = {}
     legend_all: dict[str, dict] = {}
     ocr_pages: list[int] = []
-    log.append(f"Vector PDF, {doc.page_count} page(s) - each page is read as a floor")
+    if ocr_lines is None:
+        log.append(f"Vector PDF, {doc.page_count} page(s) - each page is read as a floor")
     log.append("Step 1/2 - title block and floor titles are read from the page text")
     # 1. the text of every page (OCR for printed pages - it uses all CPU cores itself, so one page at a time)
     texts_of: dict[int, tuple[list, bool]] = {}
     for page_no in [n for n in range(1, doc.page_count + 1) if not pages or n in pages]:
         page = doc[page_no - 1]
-        lines = _lines(page)
-        used_ocr = False
-        if not lines and ocr.available():
+        if ocr_lines is not None:
+            lines = ocr_lines.get(page_no, [])
+            used_ocr = True
+        else:
+            lines = _lines(page)
+            used_ocr = False
+        if not lines and not used_ocr and ocr.available():
             if ocr.progress:
                 ocr.progress(page_no, doc.page_count)
             lines = ocr.page_lines(page, doc_hash)
@@ -533,11 +812,15 @@ def read(data: bytes, mapper: SymbolMapper, log: list[str], warnings: list[str],
     # drawing has a legend (a drawing set has its legends on the layout sheets; cover, registers, notes, details
     # have none).
     with_heading = [n for n, (ln, _) in texts_of.items() if any(_legend_word(t.text) for t, _ in ln)]
-    results = _read_pages(data, doc, [(n, *texts_of[n]) for n in with_heading], mapper, allow=False)
+    if points_of is not None:             # a picture: every page with points found is read
+        with_heading = sorted(set(with_heading) | {n for n, p in points_of.items() if p})
+    results = _read_pages(data, doc, [(n, *texts_of[n]) for n in with_heading], mapper, allow=False, points_of=points_of,
+                          outlines_of=outlines_of)
     legend_seen = any(r["legend"] for r in results)
     no_legend = sorted(set(texts_of) - {r["page"] for r in results if r["legend"]})
     if not legend_seen and no_legend:
-        results = _read_pages(data, doc, [(n, *texts_of[n]) for n in sorted(texts_of)], mapper, allow=True)
+        results = _read_pages(data, doc, [(n, *texts_of[n]) for n in sorted(texts_of)], mapper, allow=True,
+                              points_of=points_of, outlines_of=outlines_of)
     sheets: list[Sheet] = []
     for r in sorted(results, key=lambda r: r["page"]):
         for k, v in r["rows"].items():

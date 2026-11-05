@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--choices", default="ask", help="Premium 'both' products: ask (list them), all, none")
     ap.add_argument("--json", action="store_true", help="print JSON")
     ap.add_argument("--pages", help="PDF pages to read, e.g. 5-7,12 (default: all)")
-    ap.add_argument("--overlay", help="PDF only: write a copy of the drawing with the rooms and symbols found marked on it")
+    ap.add_argument("--overlay", help="PDF / picture: write a copy of the drawing with the rooms and symbols found marked on it")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -44,10 +44,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Rejected: {exc}", file=sys.stderr)
         return 2
     if args.overlay:
-        if ex["fileType"] != "pdf":
-            ap.error("--overlay works on PDF drawings")
+        if ex["fileType"] == "dxf":
+            ap.error("--overlay works on PDF drawings and pictures")
         from .extract.overlay import draw
-        Path(args.overlay).write_bytes(draw(data, sheets))
+        # a scan or picture: drawn on the traced drawing (the lines and walls as they were traced)
+        base = next((s.debug["pdf"] for s in sheets if s.debug and "pdf" in s.debug), data)
+        Path(args.overlay).write_bytes(draw(base, sheets))
         print(f"Marked-up copy written to {args.overlay}", file=sys.stderr)
     if not args.plan:
         print(json.dumps(ex, indent=2) if args.json else _show_extraction(ex))

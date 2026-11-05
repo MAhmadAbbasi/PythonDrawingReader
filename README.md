@@ -97,6 +97,28 @@ count of each point type, so a point drawn on two sheets counts once.
 
 Best results still come from DXF, or a PDF plotted with AutoCAD's "DWG To PDF.pc3" (text stays text).
 
+## Scanned PDFs and pictures (JPG, PNG, TIFF) (`app/extract/raster_reader.py`)
+
+A scan or a photo has only pixels. Each page is read from the image:
+
+1. **Ink**: pixels darker than the paper in any colour channel, by more than the paper's own grain (uneven light
+   in photos is evened out; faint lines are kept when they form a long stroke).
+2. **Words**: OCR on a contrast-stretched copy (cached like printed PDFs). Words of 3+ characters are wiped from the ink.
+3. **Tracing**: thick ink becomes filled shapes (walls cut into pieces without holes, touching switch dots split
+   apart); thin ink is thinned to centre lines and traced into polylines that end where lines meet. Lines that
+   meet are written as one path, so a wall network is long like in CAD. The result is a PDF page that
+   `pdf_reader` reads for the title, floor, rooms and areas.
+4. **Symbols**: each legend row's symbol is cut out of the picture and looked for over the building (chamfer
+   matching on stroke outlines, at the four quarter turns). A quick pass at a small size finds the places; each
+   place is then judged in full detail against the symbols that came close, so similar symbols (a 5A socket and
+   a 15A socket) are told apart. A coloured legend symbol only matches ink of its colour; letters inside a
+   matched symbol ("TV") are not taken as room names.
+
+On the test plan printed and "scanned" at 300 dpi (tilted, blurred, grainy) about 95% of symbols come out right,
+with no invented ones, and rooms are traced from the walls. A page takes about 1 minute (plus OCR the first time).
+Scan straight, at 300 dpi, well lit: faint thin lines (e.g. pale colour hairlines from a printed CAD drawing)
+read far worse than a crisp black print. `--overlay` draws the readings on the traced drawing.
+
 ## Adapting to your drawings
 
 * `config/block_mapping.yaml` - block names / legend words -> point types. Add your architects' block names
@@ -111,11 +133,14 @@ python -m pytest -q
 
 `tests/fixtures.py` builds a DXF and a vector PDF (2 floors, 5 rooms, legend, a stray point) whose counts must be
 read exactly; `tests/cad_fixture.py` builds a CAD-style PDF (double-line walls with door openings, furniture,
-hatching, wiring, symbols turned on the walls, no room rectangles); `tests/data/catalog.json` is a copy of the Solution Packages data.
+hatching, wiring, symbols turned on the walls, no room rectangles); `tests/test_raster_detection.py` reads that
+plan printed and scanned; `tests/data/catalog.json` is a copy of the Solution Packages data.
 
 ## Limits
 
-* DWG, images, scanned or password-protected PDFs are refused with the reason.
+* DWG, HEIC photos, tiny pictures (< 500 px) and password-protected PDFs are refused with the reason.
+* Scans and pictures are read from the image: symbols must look like their legend symbol at the same size;
+  very faint or blurry drawings, photos taken at an angle, and symbols drawn over thick hatching read poorly.
 * DXF symbols must be blocks (exploded symbols can't be counted); rooms need a closed outline and a name.
 * PDF symbols are matched by the shape of the legend symbol - less certain than DXF (confidence shows it).
   Symbols drawn touching each other merge into one shape and are not counted; check with `--overlay`.
