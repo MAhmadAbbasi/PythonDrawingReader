@@ -36,9 +36,9 @@ rules:
       fan: [bedroom, lounge, dining, study, servant]
       exhaust_fan: [kitchen, bath, laundry]
     items:
-      3: ['Piano Switch 3 Gang', 'Floating Switch 3 Gang']
-      2: ['Piano Switch 2 Gang', 'Floating Switch 2 Gang']
-      1: ['Piano Switch 1 Gang', 'Floating Switch 1 Gang']
+      3: ['Piano Switch 3 Gang', 'Matrix Switch 3 Gang', 'Fusion Switch 3 Gang', 'Floating Switch 3 Gang']
+      2: ['Piano Switch 2 Gang', 'Matrix Switch 2 Gang', 'Fusion Switch 2 Gang', 'Floating Switch 2 Gang']
+      1: ['Piano Switch 1 Gang', 'Matrix Switch 1 Gang', 'Fusion Switch 1 Gang', 'Floating Switch 1 Gang']
 
   - name: AC / TV control
     rule: per_area
