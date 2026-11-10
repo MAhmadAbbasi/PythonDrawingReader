@@ -20,6 +20,21 @@ NOT_ELECTRICAL = ("Not an electrical drawing: it has no electrical legend or poi
                   "estimated per room.")
 
 
+def _looks_like_plan(sheets) -> bool:
+    """A picture is a floor plan when something of one was read in it: a room name, a floor title, symbols, or
+    (names too small to read in a blurred photo) several rooms traced between walls. A screenshot or a table has
+    none of these - at most a space or two between its lines."""
+    for s in sheets:
+        if s.points or (s.floor_titles or []) or (getattr(s, "views", None) or []) \
+                or not s.default_floor.startswith("Page "):
+            return True
+        if any(r.kind and r.kind != "other" for r in s.rooms):
+            return True
+        if sum(1 for r in s.rooms if r.poly is not None) >= 4:
+            return True
+    return False
+
+
 def extract(file_name: str, data: bytes, mapper: SymbolMapper | None = None) -> dict:
     """The drawing's project info, floors with their areas and point counts, legend, warnings and a step log.
     Raises RejectedFile when the file can't be read (with the reason)."""
@@ -48,6 +63,9 @@ def extract_with_sheets(file_name: str, data: bytes, mapper: SymbolMapper | None
         raise
     except Exception as exc:
         raise RejectedFile(f"The drawing could not be read: {exc}")
+    if kind in ("scan", "image") and not _looks_like_plan(sheets):
+        raise RejectedFile("This picture doesn't look like a floor plan: no room names, floor titles or electrical "
+                           "symbols were found in it. Send a clear photo or scan of the drawing.")
     floors = assemble(sheets, log, warnings)
     log.append("Step 6/7 - points outside rooms are in \"Unassigned\"; every area has a confidence score")
     sums = totals(floors)

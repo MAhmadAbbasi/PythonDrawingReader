@@ -29,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="print JSON")
     ap.add_argument("--pages", help="PDF pages to read, e.g. 5-7,12 (default: all)")
     ap.add_argument("--overlay", help="PDF / picture: write a copy of the drawing with the rooms and symbols found marked on it")
+    ap.add_argument("--xlsx", help="with --plan: write the solution's product breakdown per area as an Excel sheet")
+    ap.add_argument("--installation", type=float, help="installation charges (on the product breakdown)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -65,7 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.plan == "premium" and args.choices in ("all", "none"):
         first = suggest(ex, catalog, "premium", None, args.size)
         choices = {str(c["itemId"]): "use" if args.choices == "all" else "skip" for c in first["toConfirm"]}
-    result = suggest(ex, catalog, args.plan, choices, args.size)
+    result = suggest(ex, catalog, args.plan, choices, args.size, installation=args.installation)
+    if args.xlsx and result.get("breakdown"):
+        from .rules.breakdown import to_xlsx
+        Path(args.xlsx).write_bytes(to_xlsx(result["breakdown"]))
+        print(f"Product breakdown written to {args.xlsx}", file=sys.stderr)
     print(json.dumps(result, indent=2) if args.json else _show_extraction(ex) + "\n\n" + _show_result(result))
     return 0
 
@@ -107,6 +113,24 @@ def _show_result(r: dict) -> str:
     t = r["totals"]
     out.append(f"  Total {t['items']} products, {t['quantity']} pieces" + (f" ({t['unlinked']} not linked to a product)" if t["unlinked"] else ""))
     out += [f"- {n}" for n in r["notes"]]
+    if r.get("breakdown"):
+        out.append("\n" + _show_breakdown(r["breakdown"]))
+    return "\n".join(out)
+
+
+def _show_breakdown(b: dict) -> str:
+    """The product breakdown per area as a text table (columns numbered, the areas listed above it)"""
+    areas = [(f["name"], a) for f in b["floors"] for a in f["areas"]]
+    out = ["Product breakdown per area" + "".join(f"\n  [{k + 1}] {f} / {a}" for k, (f, a) in enumerate(areas))]
+    out.append(f"  {'Product':<30} {'Price':>9} {'Qty':>4} {'Total':>11}  " + " ".join(f"{k + 1:>3}" for k in range(len(areas))))
+    for r in b["rows"]:
+        price = f"{r['unitPrice']:,.0f}" if r["unitPrice"] is not None else "-"
+        total = f"{r['total']:,.0f}" if r["total"] is not None else "-"
+        out.append(f"  {r['product'][:30]:<30} {price:>9} {r['quantity']:>4} {total:>11}  "
+                   + " ".join(f"{v or '':>3}" for v in r["byArea"]))
+    if b.get("installation") is not None:
+        out.append(f"  {'Installation charges':<30} {b['installation']:>9,.0f} {1:>4} {b['installation']:>11,.0f}")
+    out.append(f"  {'Total':<30} {'':>9} {'':>4} {b['total']:>11,.0f}" + ("" if b["priced"] else "   (prices missing for some products)"))
     return "\n".join(out)
 
 

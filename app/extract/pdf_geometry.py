@@ -210,12 +210,24 @@ def _rolls(sym: Symbol) -> np.ndarray:
     return r
 
 
-def shape_distance(a: Symbol, b: Symbol) -> float:
-    """0 for the same shape at any rotation; about 0.5 and more for different shapes"""
+def _disc(s: Symbol) -> bool:
+    """a solid round dot: filled for a good part of its circle, as wide as high, round (a square's corners reach
+    further out from its centre)"""
+    return (s.filled and s.r > 0 and 0.8 <= s.w / max(s.h, 1e-6) <= 1.25
+            and s.fill_area >= 0.25 * math.pi * s.r ** 2 and s.r <= 1.15 * max(s.w, s.h) / 2)
+
+
+def shape_distance(a: Symbol, b: Symbol, size_weight: float = 0.4) -> float:
+    """0 for the same shape at any rotation; about 0.5 and more for different shapes.
+    size_weight: how much a size difference counts (less for a legend drawn on another sheet)"""
     if a.filled != b.filled or a.text != b.text:
         return math.inf
+    if _disc(a) and _disc(b):
+        # a solid round dot: drawn as one fill on the plan and as a hatched circle in the legend, the ink differs
+        # but the shape is the same
+        return size_weight * abs(math.log(a.r / b.r)) + abs(a.fill_area / a.r ** 2 - b.fill_area / b.r ** 2) / math.pi
     # plans often draw symbols at another size than the legend (a fan at its real sweep), so size counts little
-    d = 0.4 * abs(math.log(a.r / b.r))
+    d = size_weight * abs(math.log(a.r / b.r))
     if a.color and b.color and a.color != b.color:
         d += 0.4
     d += abs(a.length - b.length) / max(a.length, b.length)
@@ -279,12 +291,75 @@ def _run_extent(items: list[Stroke]) -> list[float]:
     return out
 
 
+def drawn_dashes(items: list[Stroke]) -> set[int]:
+    """ids of strokes that are the dashes of a dashed line drawn as separate short lines (CAD linework exploded
+    into pieces: wiring, ceiling lines): 4 or more short straight pieces of about the same length, on one line,
+    evenly spaced"""
+    lines: dict[tuple, list[tuple[float, float, float, int]]] = {}
+    for s in items:
+        if len(s.pts) != 2 or s.filled:
+            continue
+        (x0, y0), (x1, y1) = s.pts
+        length = math.hypot(x1 - x0, y1 - y0)
+        if not 0.3 <= length <= 15:
+            continue
+        ang = math.atan2(y1 - y0, x1 - x0) % math.pi
+        ux, uy = math.cos(ang), math.sin(ang)
+        offset = -uy * x0 + ux * y0                     # distance of its line from the origin
+        a, b = ux * x0 + uy * y0, ux * x1 + uy * y1     # where it runs along that line
+        lines.setdefault((round(ang * 180 / math.pi) % 180, round(offset / 0.3)), []).append((min(a, b), max(a, b), length, id(s)))
+    out: set[int] = set()
+    for pieces in lines.values():
+        if len(pieces) < 4:
+            continue
+        pieces.sort()
+        run = [pieces[0]]
+        for p in pieces[1:] + [None]:
+            q = run[-1]
+            if p is not None and 0.1 < p[0] - q[1] < 2.5 * max(p[2], q[2]) and 0.6 < p[2] / q[2] < 1.67:
+                run.append(p)
+                continue
+            if len(run) >= 4:
+                gaps = [run[k + 1][0] - run[k][1] for k in range(len(run) - 1)]
+                if max(gaps) < 2 * min(gaps) + 0.3:     # evenly spaced
+                    out.update(r[3] for r in run)
+            if p is not None:
+                run = [p]
+    return out
+
+
+def _components(n: int, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """connected groups of n items joined by the pairs (a[k], b[k]): each item's label is the smallest index in its
+    group (array passes - millions of pairs on a busy sheet were too slow one by one)"""
+    a, b = np.asarray(a, dtype=np.int64), np.asarray(b, dtype=np.int64)
+    keep = a < b                                     # (the pairs come both ways; not an item with itself)
+    a, b = a[keep], b[keep]
+    root = np.arange(n)
+    while len(a):
+        ra, rb = root[a], root[b]
+        differ = ra != rb
+        if not differ.any():
+            break
+        a, b, ra, rb = a[differ], b[differ], ra[differ], rb[differ]
+        # hook each group's root under the smallest root it touches, then point everything at its root
+        np.minimum.at(root, np.maximum(ra, rb), np.minimum(ra, rb))
+        while True:
+            jumped = root[root]
+            if np.array_equal(jumped, root):
+                break
+            root = jumped
+    return root
+
+
 def find_symbols(items: list[Stroke], max_size: float, gap: float, colours: set[str] | None = None,
-                 max_line: float | None = None) -> list[Symbol]:
+                 max_line: float | None = None, same_colour: bool = False) -> list[Symbol]:
     """Groups strokes no bigger than max_size that touch (within gap) into symbols. colours: only strokes in these
     colours (the legend symbols' colours - leaves out grey furniture and walls that touch the symbols).
-    max_line: a single straight line longer than this is wiring, not part of a symbol"""
-    small = [s for s in items if s.piece_size <= max_size and not s.dashed and (not colours or s.color in colours)]
+    max_line: a single straight line longer than this is wiring, not part of a symbol.
+    same_colour: only strokes of one colour join (a red light drawn on a black dimension line)"""
+    dashes = drawn_dashes(items)
+    small = [s for s in items if s.piece_size <= max_size and not s.dashed and id(s) not in dashes
+             and (not colours or s.color in colours)]
     if max_line:
         small = [s for s in small if len(s.pts) > 2 or s.size <= max_line]
     ext = _run_extent(small)
@@ -295,21 +370,39 @@ def find_symbols(items: list[Stroke], max_size: float, gap: float, colours: set[
     boxes = shapely.box(b[:, 0], b[:, 1], b[:, 2], b[:, 3])
     grown = shapely.box(b[:, 0] - gap, b[:, 1] - gap, b[:, 2] + gap, b[:, 3] + gap)
     pairs = shapely.STRtree(boxes).query(grown, predicate="intersects")
-    parent = list(range(len(small)))
-
-    def root(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    for i, j in pairs.T:
-        ri, rj = root(int(i)), root(int(j))
-        if ri != rj:
-            parent[ri] = rj
+    if same_colour and pairs.shape[1]:
+        # (near-black shades count as one - a dot's fill and outline differ slightly; a pale grey / white halo round
+        # a symbol joins whatever it surrounds)
+        def family(c: str) -> str:
+            v = [int(x) for x in c.split(",")] if c else []
+            return "pale" if v and min(v) >= 7 else "dark" if v and max(v) <= 3 else c
+        colour = np.array([family(s.color) for s in small], dtype=object)
+        a, b_ = colour[pairs[0]], colour[pairs[1]]
+        pairs = pairs[:, (a == b_) | (a == "pale") | (b_ == "pale")]
+    # an outline far bigger than what lies in its box (a room drawn as one rectangle, the fan in the room) joins
+    # it only by touching its lines; parts of one symbol drawn one inside the other (a square in a circle) join
+    # by their boxes as before
+    outline = [k for k, s in enumerate(small) if len(s.pts) > 2 and not s.filled]
+    if outline and pairs.shape[1]:
+        is_outline = np.zeros(len(small), bool)
+        is_outline[outline] = True
+        size = np.maximum(b[:, 2] - b[:, 0], b[:, 3] - b[:, 1])
+        p, q = pairs
+        check = (is_outline[p] & (size[p] > 4 * size[q])) | (is_outline[q] & (size[q] > 4 * size[p]))
+        if check.any():
+            geoms = np.empty(len(small), dtype=object)
+            for k, s in enumerate(small):
+                geoms[k] = (shapely.polygons(s.pts) if s.filled and len(s.pts) >= 4 else
+                            shapely.linestrings(s.pts) if len(s.pts) >= 2 else shapely.points(s.pts[0]))
+            a, c = pairs[0][check], pairs[1][check]
+            near = shapely.dwithin(geoms[a], geoms[c], gap)
+            keep = ~check
+            keep[np.nonzero(check)[0][near]] = True
+            pairs = pairs[:, keep]
+    label = _components(len(small), pairs[0], pairs[1])
     groups: dict[int, list[int]] = {}
     for i in range(len(small)):
-        groups.setdefault(root(i), []).append(i)
+        groups.setdefault(int(label[i]), []).append(i)
     out = []
     for members in groups.values():
         g = b[members]
@@ -360,10 +453,10 @@ def _split_at_dots(items: list[Stroke]) -> list[list[Stroke]]:
     return [p for p in parts if p]
 
 
-def best_match(sym: Symbol, legend: list[tuple[Symbol, str]]) -> tuple[str | None, float]:
+def best_match(sym: Symbol, legend: list[tuple[Symbol, str]], size_weight: float = 0.4) -> tuple[str | None, float]:
     best, dist = None, math.inf
     for ref, kind in legend:
-        d = shape_distance(sym, ref)
+        d = shape_distance(sym, ref, size_weight)
         if d < dist:
             best, dist = kind, d
     return (best, dist) if dist < MATCH_LIMIT else (None, dist)
@@ -529,6 +622,10 @@ class RoomFinder:
         inside[i] = False
         if inside.any():
             return False                                   # two rooms joined through an open doorway
+        around = shapely.contains_xy(shapely.box(x0, y0, x1, y1), xs, ys)
+        around[i] = False
+        if around.sum() >= 3 and part.area < 0.5 * (x1 - x0) * (y1 - y0):
+            return False                                   # the open ground wrapped round the house (a porch, a lawn)
         return not (len(fx) and shapely.contains_xy(part, fx, fy).any())
 
     def find(self, labels: list[tuple[float, float, float]], forbidden: list[tuple[float, float]]) -> list[Polygon | None]:

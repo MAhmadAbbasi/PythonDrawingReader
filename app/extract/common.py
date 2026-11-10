@@ -26,6 +26,7 @@ FLOOR_PATTERNS = [
     (r"\bUPPER GROUND\b", "Upper Ground Floor"),
     (r"\bBASEMENT\b", "Basement"),
     (r"\bGROUND FLOOR\b|\bG ?F PLAN\b", "Ground Floor"),
+    (r"\bMEZZ?ANINE\b|\bMEZ\b", "Mezzanine Floor"),
     (r"\bFIRST FLOOR\b|\b1 ?ST FLOOR\b", "First Floor"),
     (r"\bSECOND FLOOR\b|\b2 ?ND FLOOR\b", "Second Floor"),
     (r"\bTHIRD FLOOR\b|\b3 ?RD FLOOR\b", "Third Floor"),
@@ -108,11 +109,22 @@ def parse_dimensions(text: str) -> tuple[str, float] | None:
     t = (text or "").strip()
     if not t or len(t) > 40:
         return None
+    if re.search(r"SQ\W{0,2}MM|\bMM\b|MM2|\bCORE\b", t.upper()):
+        return None                      # a cable size ("2x4 Sq.mm"), not a room
     m = DIM_METRE.search(t)
     if m:
         return t, round(float(m.group(1)) * float(m.group(2)) * 10.7639, 1)
+    # fractions of an inch as decimals: 4½" / 4 1/2" -> 4.5"
+    s = t
+    for frac, dec in (("½", ".5"), ("¼", ".25"), ("¾", ".75")):
+        s = re.sub(r"(\d)\s*" + frac, r"\g<1>" + dec, s)
+    for frac, dec in (("1/2", ".5"), ("1/4", ".25"), ("3/4", ".75")):
+        s = re.sub(r"(\d)[\s-]+" + frac + r"(?=\s*[\"″'])", r"\g<1>" + dec, s)
     # (OCR: an inch mark read as "*" - 11-7* X7-2")
-    m = DIM_FEET.search(re.sub(r"(\d\s*-\s*\d+(?:\.\d+)?)\s*\*(?=\s*[xX×])", r'\1"', t).upper())
+    s = re.sub(r"(\d\s*-\s*\d+(?:\.\d+)?)\s*\*(?=\s*[xX×])", r'\1"', s)
+    # feet-inches with the marks left out: 11-2 X 10-6" -> 11'-2" X 10'-6" (not 2 x 10'-6")
+    s = re.sub(r"(?<![\d.])(\d{1,3})\s*['′]?\s*-\s*(\d{1,2}(?:\.\d+)?)(?![\d.\"″'])", "\\1'-\\2\"", s)
+    m = DIM_FEET.search(s.upper())
     if not m:
         return None
     a = float(m.group(1)) + float(m.group(2) or 0) / 12

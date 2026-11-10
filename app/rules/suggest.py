@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from ..extract.common import CONFIG_DIR, norm
+from .breakdown import breakdown
 from .building_size import choose
 
 PLANS = ("standard", "premium")
@@ -198,10 +199,12 @@ def _matter_gateway(other: dict, catalog: dict, lines: list[dict], left_out: lis
 
 
 def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = None,
-            size_id: int | None = None, rules: dict | None = None, other_brand: dict | None = None) -> dict:
+            size_id: int | None = None, rules: dict | None = None, other_brand: dict | None = None,
+            installation: float | None = None) -> dict:
     """choices: None = not asked yet; else {item id (str/int): "use" | "skip" | id of a Premium-only item to use instead}
     other_brand: {"company": name, "areas": ["Ground Floor / Lounge", ...]} when the client uses another company's
-    automation in those areas -> a Matter Gateway row (last)"""
+    automation in those areas -> a Matter Gateway row (last)
+    installation: installation charges, for the product breakdown's total"""
     plan = (plan or "").lower()
     if plan not in PLANS:
         raise ValueError("Choose the Standard or the Premium plan.")
@@ -325,7 +328,7 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
     unlinked = [l for l in lines if l["productId"] is None]
     if unlinked and not to_confirm:
         notes.append(f"{len(unlinked)} item(s) are not in the inventory (not on the price list) - their price is entered on the quotation.")
-    return {
+    result = {
         "plan": plan,
         "size": size,
         "needsConfirmation": bool(to_confirm),
@@ -337,3 +340,6 @@ def suggest(extraction: dict, catalog: dict, plan: str, choices: dict | None = N
                    "unlinked": len(unlinked) if not to_confirm else 0},
         "notes": notes,
     }
+    # the products per area, floor by floor (the quotation sheet layout) - once the lines are settled
+    result["breakdown"] = None if to_confirm else breakdown(result, extraction, catalog, installation=installation)
+    return result

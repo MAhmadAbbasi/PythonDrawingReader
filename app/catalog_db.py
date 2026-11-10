@@ -37,7 +37,7 @@ def load_catalog(conn: str, tenant_id: int, plan: str = "standard") -> dict:
             return "both" if s and p else "standard" if s else "premium" if p else "none"
 
         cur.execute("""
-            SELECT c.Id, c.Name, c.Unit, c.FamilyId, f.Name AS FamilyName, g.Name AS GroupName, s.Id AS SkuId, s.ProductName AS SkuName
+            SELECT c.Id, c.Name, c.Unit, c.FamilyId, f.Name AS FamilyName, g.Name AS GroupName, s.Id AS SkuId, s.ProductName AS SkuName, s.Price AS SkuPrice
             FROM CATL_PROD c
             LEFT JOIN CATL_FMLY f ON f.TenantId = c.TenantId AND f.Id = c.FamilyId AND f.IsDeleted = 0
             LEFT JOIN CATL_CATG g ON g.TenantId = f.TenantId AND g.Id = f.GroupId AND g.IsDeleted = 0
@@ -61,5 +61,7 @@ def load_catalog(conn: str, tenant_id: int, plan: str = "standard") -> dict:
         "id": r["Id"], "name": r["Name"], "unit": r["Unit"], "groupName": r["GroupName"], "productLineName": r["FamilyName"],
         "usage": usage(r["FamilyId"]) if r["FamilyName"] else "none",
         "productId": r["SkuId"], "productName": r["SkuName"], "quantities": qty.get(r["Id"], {}),
+        # (the linked product's sale price - for the product breakdown; none when no product is linked)
+        "unitPrice": float(r["SkuPrice"]) if r["SkuPrice"] is not None else None,
     } for r in rows]
     return {"sizes": sizes, "items": items, "lines": lines, "ruleItems": rule_items}

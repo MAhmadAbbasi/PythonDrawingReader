@@ -3,23 +3,27 @@
   POST /extract   (file)       validate + read the drawing -> floors / areas / point counts (waits for the result)
   POST /jobs      (file)       the same in the background -> {jobId}; refused files answer 422 straight away
   GET  /jobs/{id}              {status: queued|running|done|failed, page, pages, message, result | detail}
-  POST /suggest   (json)       {extraction, catalog, plan, choices?, sizeId?} -> suggested solution
+  POST /suggest   (json)       {extraction, catalog, plan, choices?, sizeId?, installation?} -> suggested solution,
+                               with its product breakdown per area ("breakdown")
+  POST /suggest/xlsx (json)    the same -> the product breakdown as an Excel sheet
 Run:  uvicorn app.main:app --host 127.0.0.1 --port 8765
 Set D2Q_KEY to require the same key from the POS (X-Service-Key header)."""
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from .extract import RejectedFile, SUPPORTED_MESSAGE, extract, ocr
 from .extract.validator import MAX_BYTES, check
+from .rules.breakdown import to_xlsx
 from .rules.suggest import rule_list, suggest
 
 app = FastAPI(title="Drawing2Quote", version="1.0")
@@ -109,6 +113,8 @@ class SuggestRequest(BaseModel):
     choices: dict[str, Any] | None = None
     sizeId: int | None = None
     otherBrand: dict[str, Any] | None = None     # {company, areas[]}: another company's automation -> Matter gateways
+    installation: float | None = None            # installation charges (in the product breakdown's total)
+    client: str | None = None                    # name on the breakdown sheet (else the drawing's client / file name)
 
 
 @app.get("/rules", dependencies=[Depends(service_key)])
@@ -120,6 +126,23 @@ def rules() -> list[dict]:
 @app.post("/suggest", dependencies=[Depends(service_key)])
 def suggest_solution(req: SuggestRequest) -> dict:
     try:
-        return suggest(req.extraction, req.catalog, req.plan, req.choices, req.sizeId, other_brand=req.otherBrand)
+        result = suggest(req.extraction, req.catalog, req.plan, req.choices, req.sizeId, other_brand=req.otherBrand,
+                         installation=req.installation)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    if req.client and result.get("breakdown"):
+        result["breakdown"]["client"] = req.client
+    return result
+
+
+@app.post("/suggest/xlsx", dependencies=[Depends(service_key)])
+def suggest_xlsx(req: SuggestRequest) -> Response:
+    """The suggested solution's product breakdown per area as an Excel sheet (a row per product: unit price, qty,
+    total; a column per area under its floor; installation charges and the total at the bottom)"""
+    result = suggest_solution(req)
+    if result.get("needsConfirmation"):
+        raise HTTPException(status_code=409, detail="Confirm the products ticked for both Standard and Premium first.")
+    name = re.sub(r"[^A-Za-z0-9 ._-]+", "", result["breakdown"]["client"] or "solution").strip() or "solution"
+    return Response(to_xlsx(result["breakdown"]),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name} - {result["plan"]} solution.xlsx"'})

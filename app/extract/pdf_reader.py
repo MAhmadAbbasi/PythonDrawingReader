@@ -108,9 +108,27 @@ def _clean_name(name: str) -> str:
     return " ".join(words) or name
 
 
+# the most a room of a kind can measure (sq ft) - a traced outline beyond it ran out through an opening. Open
+# spaces (lawn, garage / porch, balcony / terrace) and halls have no limit.
+ROOM_MAX_SQFT = {"bath": 250, "dressing": 300, "kitchen": 600, "store": 400, "laundry": 300, "stairs": 500,
+                 "bedroom": 1000, "servant": 600, "study": 900, "dining": 1200}
+
+# the least (sq ft): smaller is a sofa, a bed or a stair tread traced instead of the room
+ROOM_MIN_SQFT = {"bedroom": 50, "lounge": 60, "dining": 50, "kitchen": 25, "study": 40, "servant": 30, "bath": 12,
+                 "stairs": 10, "store": 10, "laundry": 10, "dressing": 10}
+
+SERVICE_ROOMS = {"bath", "dressing", "store", "kitchen", "laundry", "stairs"}
+
+# a void in the floor ("LOOK BELOW" over a double-height hall): not part of any room on this floor
+OPEN_BELOW = re.compile(r"\b(LOOK BELOW|OPEN TO BELOW|OPEN TO SKY)\b")
+
+# an address in the title block ("PLOT NO 290-J, STREET # 16, BLOCK A, GARDEN SCHEME B17") - not a room name
+ADDRESS = re.compile(r"\b(SCHEME|SOCIETY|PHASE|SECTOR|STREET|PLOT NO|HOUSING|TOWN ?SHIP|COLONY)\b")
+
+
 def _title_text(text: str) -> bool:
     n = norm(text)
-    return any(re.search(p, n) for ps in TITLE_FIELDS.values() for p in ps)
+    return bool(ADDRESS.search(n)) or any(re.search(p, n) for ps in TITLE_FIELDS.values() for p in ps)
 
 
 def _room_labels(lines, legend_rect, skip: set[int]) -> list[tuple[str, str, pymupdf.Rect, float]]:
@@ -124,7 +142,8 @@ def _room_labels(lines, legend_rect, skip: set[int]) -> list[tuple[str, str, pym
                    for d in dims)
 
     free = [(t, r) for k, (t, r) in enumerate(lines) if k not in skip and not (legend_rect and legend_rect.intersects(r))
-            and (not floor_name(t.text) or (room_type(t.text) and sized(r))) and not _title_text(t.text)]
+            and (not floor_name(t.text) or (room_type(t.text) and sized(r))) and not _title_text(t.text)
+            and not re.search(r"\d{4,}", t.text)]           # (an account code, a phone number - not a room name)
     used: set[int] = set()
     labels = []
     for i, (t, r) in enumerate(free):
@@ -213,17 +232,42 @@ def _legend_table(lines, items: list[geo.Stroke], mapper: SymbolMapper):
     """A legend drawn as a table: a SYMBOL(S) column and a DESCRIPTION column. Every symbol drawn in the symbol
     column of a row counts as that row's type (a row can show several: normal / smart / dimmer switch)."""
     out = []
-    heads = [(t, r) for t, r in lines if re.fullmatch(r"SYMBOLS?", norm(t.text))]
-    descs = [(t, r) for t, r in lines if norm(t.text).startswith("DESCRIPTION")]
-    for sh, sr in heads:
+    # (column headers: SYMBOL | DESCRIPTION, or PLAN | NAME - a header only counts when it has its partner on the
+    # same row)
+    heads = [r for t, r in lines if re.fullmatch(r"SYMBOLS?|PLAN", norm(t.text))]
+    descs = [r for t, r in lines if norm(t.text).startswith("DESCRIPTION") or norm(t.text) == "NAME"]
+
+    def pair(sr, side: str):
+        """the DESCRIPTION header of this SYMBOL header's table: on the same header row, on that side, with no
+        other SYMBOL header between them (that one is another table's)"""
         cy = (sr.y0 + sr.y1) / 2
-        right = [(t, r) for t, r in descs if r.x0 > sr.x1 and r.x0 - sr.x1 < 60 * sr.height and abs((r.y0 + r.y1) / 2 - cy) < sr.height]
-        if not right:
-            continue
-        dt, dr = min(right, key=lambda tr: tr[1].x0)
-        # description texts: below the headers, starting between the two header columns
-        cells = sorted(((t, r) for t, r in lines if r.y0 > sr.y1 and sr.x1 < r.x0 < (dr.x0 + dr.x1) / 2),
-                       key=lambda tr: tr[1].y0)
+        found = []
+        for dr in descs:
+            if abs((dr.y0 + dr.y1) / 2 - cy) >= sr.height:
+                continue
+            a, b = (sr.x1, dr.x0) if side == "right" else (dr.x1, sr.x0)
+            if 0 < b - a < 60 * sr.height and not any(h is not sr and abs((h.y0 + h.y1) / 2 - cy) < sr.height
+                                                      and a < (h.x0 + h.x1) / 2 < b for h in heads):
+                found.append((b - a, dr))
+        return min(found, key=lambda f: f[0])[1] if found else None
+
+    # the symbol column left of the descriptions (SYMBOL | DESCRIPTION) or right of them (DESCRIPTION | HEIGHT |
+    # SYMBOL): the way that gives more tables their own description column (one sheet draws its tables alike)
+    by_side = {side: [(sr, dr) for sr in heads if (dr := pair(sr, side))] for side in ("right", "left")}
+    side = "left" if len(by_side["left"]) > len(by_side["right"]) else "right"
+    # (a table ends at the header row of the table below it - not at a legend title, which can head a group of
+    # rows inside the table: "LIGHTING LEGEND")
+    stops = descs
+    for sr, dr in by_side[side]:
+        if side == "right":           # SYMBOL | DESCRIPTION: description texts start between the two headers
+            col = (sr.x1, (dr.x0 + dr.x1) / 2)
+        else:                         # DESCRIPTION | ... | SYMBOL: they start under the description header
+            col = (dr.x0 - 1.5 * dr.width, dr.x1)
+        top = max(sr.y1, dr.y1)
+        x_span = (min(col[0], sr.x0), max(col[1], sr.x1))
+        end = min((r.y0 for r in stops if r.y0 > top + 1 and r.x1 > x_span[0] and r.x0 < x_span[1]), default=float("inf"))
+        cells = sorted(((t, r) for t, r in lines if top - 1 < r.y0 < end and col[0] < r.x0 < col[1]
+                        and r not in (sr, dr)), key=lambda tr: tr[1].y0)
         rows: list[list[tuple[Text, pymupdf.Rect]]] = []
         last_y = sr.y1
         for t, r in cells:
@@ -236,18 +280,25 @@ def _legend_table(lines, items: list[geo.Stroke], mapper: SymbolMapper):
             last_y = r.y1
         if not rows:
             continue
+        if side == "left":
+            out += _symbol_column(rows, sr, dr, items, mapper)
+            continue
         centres = [(row[0][1].y0 + row[0][1].y1) / 2 for row in rows]
-        tx0, tx1 = sr.x0 - 2 * sr.width, max(r.x0 for row in rows for _, r in row)
+        if side == "right":
+            tx0, tx1 = sr.x0 - 2 * sr.width, max(r.x0 for row in rows for _, r in row)
+        else:                         # the symbol column: around its header ("SYMBOL" / "ELECTRICAL")
+            cx = (sr.x0 + sr.x1) / 2
+            tx0, tx1 = cx - 1.4 * sr.width, cx + 1.4 * sr.width
         ty0, ty1 = sr.y1 - 1, max(r.y1 for _, r in rows[-1]) + 12
         table_items = [s for s in items if s.bbox[0] >= tx0 and s.bbox[2] <= tx1 and s.bbox[1] >= ty0 and s.bbox[3] <= ty1]
         pitch = statistics.median(np.diff(centres)) if len(centres) > 1 else 3 * rows[0][0][1].height
-        left = sr.x0 - 1.5 * sr.width
+        left = sr.x0 - 1.5 * sr.width if side == "right" else tx0
         for row, y in zip(rows, centres):
             desc = " ".join(t.text for t, _ in sorted(row, key=lambda tr: tr[1].x0))
             kind = mapper.classify(desc)
             if not kind:
                 continue
-            x_end = min(r.x0 for _, r in row) - 0.5
+            x_end = min(r.x0 for _, r in row) - 0.5 if side == "right" else tx1
             strip = (left, y - 0.5 * pitch, x_end, y + 0.5 * pitch)
             # symbols can be wider than the row is high (a distribution board); table borders are long lines
             found = geo.find_symbols([s for s in table_items if s.inside(strip)], 0.9 * (x_end - left), 0.04 * pitch,
@@ -258,6 +309,56 @@ def _legend_table(lines, items: list[geo.Stroke], mapper: SymbolMapper):
             for sym in found:
                 if sym.size >= 0.4 * biggest:
                     out.append((sym, kind, desc, pymupdf.Rect(sr) | dr | pymupdf.Rect(strip) | row[-1][1]))
+    return out
+
+
+def _symbol_column(rows, sr, dr, items: list[geo.Stroke], mapper: SymbolMapper):
+    """A table with its symbol column right of the descriptions (DESCRIPTION | HEIGHT | SYMBOL): rows can be much
+    taller than their text (a fan drawn big), so the symbols are found in the whole column and each goes to the
+    nearest description."""
+    joined: list[list] = []              # a name on two lines in its cell ("RECESS MOUNTED SLIM" / "CIRCULAR LED ...")
+    for row in rows:
+        if joined and not mapper.classify(" ".join(t.text for t, _ in joined[-1])) \
+                and row[0][1].y0 - max(r.y1 for _, r in joined[-1]) < row[0][1].height:
+            joined[-1] = joined[-1] + row
+        else:
+            joined.append(row)
+    centres = [(min(r.y0 for _, r in row) + max(r.y1 for _, r in row)) / 2 for row in joined]
+    pitch = statistics.median(np.diff(centres)) if len(centres) > 1 else 3 * joined[0][0][1].height
+    cx = (sr.x0 + sr.x1) / 2
+    tx0, tx1 = cx - 1.4 * sr.width, cx + 1.4 * sr.width
+    ty0, ty1 = sr.y1 - 1, max(r.y1 for _, r in joined[-1]) + pitch
+    column = [s for s in items if s.bbox[0] >= tx0 and s.bbox[2] <= tx1 and s.bbox[1] >= ty0 and s.bbox[3] <= ty1]
+    found = [s for s in geo.find_symbols(column, 0.9 * (tx1 - tx0), 0.04 * pitch)
+             if abs(s.x - cx) < 0.75 * sr.width]          # (not a column border line)
+    by_row: dict[int, list[geo.Symbol]] = {}
+    for s in found:
+        i = min(range(len(centres)), key=lambda k: abs(centres[k] - s.y))
+        if abs(centres[i] - s.y) < 1.5 * pitch:
+            by_row.setdefault(i, []).append(s)
+    out = []
+    for i, syms in by_row.items():
+        desc = " ".join(t.text for t, _ in sorted(joined[i], key=lambda tr: (round(tr[1].y0), tr[1].x0)))
+        kind = mapper.classify(desc)
+        if not kind:
+            continue
+        if len(syms) > 3:                 # one symbol drawn as many loose pieces (a chandelier's ring of beads)
+            x0, y0 = min(s.bbox[0] for s in syms), min(s.bbox[1] for s in syms)
+            x1, y1 = max(s.bbox[2] for s in syms), max(s.bbox[3] for s in syms)
+            if max(x1 - x0, y1 - y0) < 1.5 * pitch:
+                # (described whole: find_symbols would split it again at its dots, as switches stacked on a wall)
+                whole = geo.describe([s for s in column if s.inside((x0 - 1, y0 - 1, x1 + 1, y1 + 1))])
+                syms = [whole] if whole is not None else syms
+        # (a plain straight line - a cable, a strip light - cannot be told from wiring on the plans)
+        syms = [s for s in syms if s.filled or s.curve > 0.05
+                or max(s.dirs[k] + s.dirs[(k + 1) % 12] for k in range(12)) < 0.97]
+        if not syms:
+            continue
+        biggest = max(s.size for s in syms)
+        area = pymupdf.Rect(sr) | dr | pymupdf.Rect(tx0, centres[i] - 0.5 * pitch, tx1, centres[i] + 0.5 * pitch)
+        for r in joined[i]:
+            area |= r[1]
+        out += [(s, kind, desc, area) for s in syms if s.size >= 0.4 * biggest]
     return out
 
 
@@ -438,6 +539,51 @@ def _inner_text(sym: geo.Symbol, lines) -> str:
     return norm(inner[0].text) if inner else ""
 
 
+LENGTH = re.compile(r"\s*(\d{1,3})\s*['′]\s*(?:-?\s*(\d{1,2})\s*([½¼¾])?\s*[\"″]?)?\s*")
+FRACTION = {"½": 0.5, "¼": 0.25, "¾": 0.75}
+
+
+def _feet_from_dimensions(lines, items: list[geo.Stroke]) -> tuple[float, int] | None:
+    """(PDF points per foot, how many dimensions agreed) when the scale isn't written (N.T.S.): from the dimension
+    strings - a length written on its dimension line ("9'", "2'-6\"", "7'-1½\""), the line as long as that many feet.
+    None when there are too few, or they don't agree."""
+    segs = np.array([(*s.pts[0], *s.pts[-1]) for s in items if len(s.pts) == 2 and not s.filled] or np.zeros((0, 4)))
+    if not len(segs):
+        return None
+    dx, dy = segs[:, 2] - segs[:, 0], segs[:, 3] - segs[:, 1]
+    horiz, vert = np.abs(dy) < 0.3, np.abs(dx) < 0.3
+    ratios = []
+    for t, r in lines:
+        m = LENGTH.fullmatch(t.text)
+        if not m:
+            continue
+        feet = int(m.group(1)) + (int(m.group(2) or 0) + FRACTION.get(m.group(3) or "", 0)) / 12
+        if not 1 <= feet <= 200:
+            continue
+        cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+        if r.width >= r.height:            # written along a horizontal line, just above / below it
+            h = r.height
+            sel = horiz & (np.minimum(segs[:, 0], segs[:, 2]) <= cx) & (np.maximum(segs[:, 0], segs[:, 2]) >= cx) \
+                & (np.abs(dx) >= r.width) & (np.abs(segs[:, 1] - cy) < 1.5 * h)
+            off = np.abs(segs[:, 1] - cy)
+            length = np.abs(dx)
+        else:                              # written up a vertical line
+            h = r.width
+            sel = vert & (np.minimum(segs[:, 1], segs[:, 3]) <= cy) & (np.maximum(segs[:, 1], segs[:, 3]) >= cy) \
+                & (np.abs(dy) >= r.height) & (np.abs(segs[:, 0] - cx) < 1.5 * h)
+            off = np.abs(segs[:, 0] - cx)
+            length = np.abs(dy)
+        k = np.nonzero(sel)[0]
+        if len(k):
+            best = k[np.argmin(off[k])]
+            ratios.append(length[best] / feet)
+    if len(ratios) < 6:
+        return None
+    med = statistics.median(ratios)
+    agree = sum(abs(x / med - 1) < 0.08 for x in ratios)
+    return (med, agree) if agree >= max(6, 0.5 * len(ratios)) else None
+
+
 def _feet_guess(labels, page) -> float:
     """PDF points per foot when the scale isn't written: room names are roughly 13 ft apart"""
     pts = [((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2) for _, _, r, _ in labels]
@@ -479,9 +625,11 @@ def _drop_word_outlines(items: list[geo.Stroke], lines) -> list[geo.Stroke]:
 
 
 def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, allow_no_legend: bool,
-               given_points: list[PointItem] | None = None, given_outlines: list | None = None) -> dict:
+               given_points: list[PointItem] | None = None, given_outlines: list | None = None,
+               shared_legend: tuple | None = None) -> dict:
     """Rooms and points of one page. Without a legend (and not allowed) only {"legend": False} comes back.
-    given_points: the symbols were already found (a picture: matched as images) - only rooms are read here."""
+    given_points: the symbols were already found (a picture: matched as images) - only rooms are read here.
+    shared_legend: (shapes, text symbols) of a legend sheet of the set, used when this page has no legend itself"""
     page = doc[page_no - 1]
     texts = [t for t, _ in lines]
     drawings = page.get_drawings()
@@ -501,6 +649,10 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
 
     # Step 3 - legend
     shapes, text_symbols, legend_rect, rows = _legend(lines, items, mapper)
+    own_legend = (shapes, text_symbols) if shapes or text_symbols else None
+    borrowed = not own_legend and bool(shared_legend)
+    if borrowed:
+        shapes, text_symbols = shared_legend
     if legend_rect:                       # legend text is not a floor title ("... WEATHER PROOF")
         titles = [tt for tt in titles if not legend_rect.contains(pymupdf.Point(tt[1], tt[2]))]
         if len({name for name, _, _ in titles}) == 1:
@@ -517,30 +669,43 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
     sizes = [s.size for s, _ in shapes]
     max_size = 4 * max(sizes) if sizes else 0.02 * min(page.rect.width, page.rect.height)
     gap = max(0.3, 0.12 * statistics.median(sizes)) if sizes else 0.5
+    size_weight = 0.4
+    if borrowed:
+        # a legend sheet is drawn at its own size, not the plan's: size counts little, and long thin symbols
+        # (a strip light) do not set how big a symbol can be (walls would be taken in with the symbols)
+        compact = [s.size for s, _ in shapes if min(s.w, s.h) >= 0.25 * max(s.w, s.h)]
+        max_size = 2 * max(compact or sizes)
+        size_weight = 0.1
     # strokes in the legend symbols' colours only; all of them when the legend is in black / one colour
-    colours = {s.color for s, _ in shapes if s.color}
+    # (not a legend on another sheet: the plans can be drawn in other colours)
+    colours = {s.color for s, _ in shapes if s.color} if not borrowed else set()
     dark = {c for c in colours if all(int(v) <= 2 for v in c.split(","))}
     found = [] if given_points is not None else geo.find_symbols(
         plan_items, max_size, gap, colours if colours - dark else None,
-        max_line=1.5 * statistics.median(sizes) if sizes else None)
+        max_line=1.5 * statistics.median(sizes) if sizes else None, same_colour=borrowed)
     short_texts = [(k, t) for k, (t, r) in enumerate(lines)
                    if len(t.text.strip()) <= 4 and not (legend_rect and legend_rect.intersects(r))]
     # point types drawn as a filled dot (switches): the area of one dot, per colour
     dot_kinds: dict[str, tuple[str, float]] = {}
-    for sym, kind in shapes:
+    for sym, kind in ([] if borrowed else shapes):     # (dot sizes on another sheet say nothing)
         if sym.filled and sym.fill_area > 0 and sym.color:
             dot_kinds.setdefault(sym.color, (kind, sym.fill_area))
     points: list[PointItem] = list(given_points or [])
     unknown: list[geo.Symbol] = []
     symbol_texts: set[int] = set()        # indexes into lines: texts that are (part of) a symbol
+    legend_texts = set(text_symbols) | {s.text for s, _ in shapes if s.text}
     for sym in found:
         x0, y0, x1, y1 = sym.bbox
         for k, t in ([] if used_ocr else short_texts):   # OCR'd letters stay part of the shape instead
+            # (a room name next to a symbol - "BED" under a fan - is not the symbol's text, unless the legend's
+            # symbols carry that text; two letters - "TV" in a TV point - are the symbol's)
+            if len(norm(t.text)) >= 3 and room_type(t.text) and norm(t.text) not in legend_texts:
+                continue
             if x0 <= t.x <= x1 and y0 <= t.y <= y1:
                 sym.text = norm(t.text)
                 symbol_texts.add(k)
                 break
-        kind, _ = geo.best_match(sym, shapes)
+        kind, _ = geo.best_match(sym, shapes, size_weight)
         if kind:
             points.append(PointItem(kind, sym.x, sym.y))
         elif n := _dots(sym, dot_kinds):
@@ -586,11 +751,17 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
         logs.append(f"Page {page_no}: {len(views)} drawings on the sheet - " + ", ".join(
             f"{v['name']} ({'floor plan' if v['kind'] == 'plan' else v['kind'] + (' - not a floor plan' if v['kind'] in NOT_PLAN else '')})"
             for v in views))
-    ft = 72 * 12 / scale if scale else _feet_guess(labels, page)
-    forbidden = [(t.x, t.y) for t in texts if floor_name(t.text) or LEGEND_TITLE.match(norm(t.text)) or _title_text(t.text)]
+    # no scale written (N.T.S.): from the dimension strings, else a guess from how far apart the room names are
+    dims_scale = None if scale else _feet_from_dimensions(lines, plan_items)
+    ft = 72 * 12 / scale if scale else dims_scale[0] if dims_scale else _feet_guess(labels, page)
+    if dims_scale:
+        logs.append(f"Page {page_no}: no scale written - worked out from {dims_scale[1]} dimension line(s)")
+    # (no room reaches over these: titles, the legend, and a void open to the floor below - "LOOK BELOW")
+    forbidden = [(t.x, t.y) for t in texts if floor_name(t.text) or LEGEND_TITLE.match(norm(t.text)) or _title_text(t.text)
+                 or OPEN_BELOW.search(norm(t.text))]
     if legend_rect:
         forbidden.append(((legend_rect.x0 + legend_rect.x1) / 2, (legend_rect.y0 + legend_rect.y1) / 2))
-    area_range = (12, 6000) if scale else (2, 30000)
+    area_range = (12, 6000) if scale or dims_scale else (2, 30000)
     finder = geo.RoomFinder(plan_items, page.rect, ft, area_range)
     building = None if multi else finder.footprint()      # (several drawings: their own areas did that above)
     if building:            # names outside the building's walls (title block, notes, details) are not rooms
@@ -601,18 +772,25 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
     dims_texts = [(t, r, d) for t, r in lines if (d := parse_dimensions(t.text))]
 
     # no scale written: work it out from rooms whose size is written ("14'x12'" in a traced outline)
-    sqft = (1 / ft ** 2) if scale else None
-    if not scale:
+    sqft = (1 / ft ** 2) if scale or dims_scale else None
+    if not scale and not dims_scale:
         ratios = []
         for (name, kind, rect, h), poly in zip(labels, outlines):
             if poly is not None:
                 inside = [d for t, r, d in dims_texts if poly.covers(box(t.x - 0.1, t.y - 0.1, t.x + 0.1, t.y + 0.1))]
-                if inside:
-                    ratios.append(inside[0][1] / poly.area)
+                # (or the size written right under the name - as a room's area is matched below)
+                cx = (rect.x0 + rect.x1) / 2
+                below = [d for t, r, d in dims_texts if abs(t.x - cx) < 6 * h and 0 <= r.y0 - rect.y0 < 3 * h + rect.height]
+                if inside or below:
+                    ratios.append((inside or below)[0][1] / poly.area)
+        better = 1 / statistics.median(ratios) ** 0.5 if ratios else None
+        # a room or two far off the guess: their outlines are likely pieces of the rooms (furniture) - not trusted
+        if ratios and len(ratios) < 3 and not 0.6 < better / ft < 1.6:
+            ratios = []
         if ratios:
             sqft = statistics.median(ratios)
-            better = 1 / sqft ** 0.5
-            if abs(better / ft - 1) > 0.1:      # the guess was off: trace again with the right door width
+            # the guess was off: trace again with the right door width (when enough rooms agree on it)
+            if abs(better / ft - 1) > 0.1 and len(ratios) >= 3:
                 ft = better
                 outlines = geo.RoomFinder(plan_items, page.rect, ft, area_range).find(centres, forbidden)
             logs.append(f"Page {page_no}: no scale written - worked out from {len(ratios)} room(s) with dimensions")
@@ -686,7 +864,49 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
             key = tuple(round(v) for v in room.poly.bounds)
             if key in seen:
                 room.poly = None
+                if room.dimensions is None:      # (its area was that outline's: not counted twice)
+                    room.area_sqft = None
             seen.add(key)
+    # a service room (bath, dress, store ...) lying inside another room's outline: that outline took it in through
+    # an open doorway or a wall not drawn - it is cut out, so no floor is counted twice. (Not a room of the same
+    # kind - a sofa's box named like the room - nor one only partly inside, whose own outline may be the wrong one.)
+    traced_rooms = sorted((r for r in rooms if r.poly is not None), key=lambda r: r.poly.area)
+    for i, big in enumerate(traced_rooms):
+        cut = [s.poly for s in traced_rooms[:i] if s.kind in SERVICE_ROOMS and s.kind != big.kind
+               and s.poly.intersects(big.poly) and s.poly.intersection(big.poly).area > 0.8 * s.poly.area]
+        if not cut:
+            continue
+        rest = big.poly.difference(shapely.union_all(cut))
+        parts = [g for g in shapely.get_parts(rest) if g.area > 0]
+        if not parts:
+            continue
+        label = shapely.Point(big.x, big.y)
+        big.poly = min(parts, key=lambda g: (not g.buffer(1).contains(label), -g.area))
+        if big.dimensions is None and sqft:
+            big.area_sqft = round(big.poly.area * sqft, 1)
+    # an area far beyond what such a room can be: the outline ran out through an opening - no area rather than
+    # a wrong one
+    # ... and far below it: a piece of furniture or a stair tread traced instead of the room
+    for room in rooms:
+        most, least = ROOM_MAX_SQFT.get(room.kind or ""), ROOM_MIN_SQFT.get(room.kind or "")
+        if not room.area_sqft:
+            continue
+        if room.dimensions is not None:  # a written size: only an impossible one - a note's "2 x 4" taken as it
+            if least and room.area_sqft < least:
+                warns.append(f"Page {page_no}: {room.name} - the size found next to it ({room.dimensions}) is too "
+                             f"small for a {room.kind}; no area given - check it on the drawing.")
+                room.area_sqft = room.dimensions = None
+            continue
+        if most and room.area_sqft > most:
+            what = "too big"
+        elif least and room.area_sqft < least:
+            what = "too small"
+        else:
+            continue
+        warns.append(f"Page {page_no}: {room.name} - the outline traced ({room.area_sqft:.0f} sq ft) is {what} "
+                     f"for a {room.kind}; no area given - check it on the drawing.")
+        room.area_sqft = None
+        room.poly = None
 
     # an area plan (the covered area split into parts "A 6'-6" x 7'-0"" ...): each size written in it is an area
     if multi:
@@ -712,7 +932,8 @@ def _read_page(doc, page_no: int, lines, used_ocr: bool, mapper: SymbolMapper, a
                   debug={"page": page_no - 1, "legend": legend_rect, "unknown": unknown_groups,
                          "views": [{"page": page_no, "name": v["name"], "kind": v["kind"]} for v in views] if multi else []})
     return {"page": page_no, "legend": bool(shapes or text_symbols) or given_points is not None, "rows": rows, "sheet": sheet,
-            "log": logs, "warnings": warns}
+            "log": logs, "warnings": warns, "own_legend": own_legend,
+            "legend_share": legend_rect.get_area() / page.rect.get_area() if own_legend and legend_rect else 0.0}
 
 
 # pages are read in parallel worker processes (the reading is plain Python, one core per page)
@@ -726,12 +947,12 @@ def _worker_init(data: bytes, mapper: SymbolMapper) -> None:
     _worker_mapper = mapper
 
 
-def _worker(page_no: int, lines, used_ocr: bool, allow: bool, points, outlines) -> dict:
-    return _read_page(_worker_doc, page_no, lines, used_ocr, _worker_mapper, allow, points, outlines)
+def _worker(page_no: int, lines, used_ocr: bool, allow: bool, points, outlines, shared) -> dict:
+    return _read_page(_worker_doc, page_no, lines, used_ocr, _worker_mapper, allow, points, outlines, shared)
 
 
 def _read_pages(data: bytes, doc, jobs: list[tuple[int, list, bool]], mapper: SymbolMapper, allow: bool,
-                points_of: dict | None = None, outlines_of: dict | None = None) -> list[dict]:
+                points_of: dict | None = None, outlines_of: dict | None = None, shared: tuple | None = None) -> list[dict]:
     points_of = points_of or {}
     outlines_of = outlines_of or {}
     workers = min(len(jobs), max(1, (os.cpu_count() or 2) - 1), int(os.environ.get("D2Q_WORKERS", "8")),
@@ -742,7 +963,7 @@ def _read_pages(data: bytes, doc, jobs: list[tuple[int, list, bool]], mapper: Sy
         pool = None
         try:
             pool = ProcessPoolExecutor(workers, mp_context=ctx, initializer=_worker_init, initargs=(data, mapper))
-            futures = {pool.submit(_worker, n, ln, o, allow, points_of.get(n), outlines_of.get(n)): n for n, ln, o in jobs}
+            futures = {pool.submit(_worker, n, ln, o, allow, points_of.get(n), outlines_of.get(n), shared): n for n, ln, o in jobs}
             pending = set(futures)
             while pending:
                 finished, pending = wait(pending, timeout=2)
@@ -759,7 +980,7 @@ def _read_pages(data: bytes, doc, jobs: list[tuple[int, list, bool]], mapper: Sy
                     if p.exitcode is None:
                         p.terminate()
                 pool.shutdown(wait=False, cancel_futures=True)
-    return [done[n] if n in done else _read_page(doc, n, ln, o, mapper, allow, points_of.get(n), outlines_of.get(n))
+    return [done[n] if n in done else _read_page(doc, n, ln, o, mapper, allow, points_of.get(n), outlines_of.get(n), shared)
             for n, ln, o in jobs]
 
 
@@ -771,6 +992,10 @@ def _workers_for_memory(data_size: int) -> int:
     except Exception:
         return 8
     return max(1, int(0.7 * free // (300 * 2 ** 20 + 3 * data_size)))
+
+
+# words in an electrical sheet's title ("GROUND FLOOR LIGHTING PLAN", "POWER & AC LAYOUT", "ELECTRICAL PLAN")
+ELECTRICAL_SHEET = re.compile(r"\b(ELECTRICAL|LIGHTING|POWER|SOCKETS?|SWITCH(ES|ING)?|DATA|CCTV|WIRING|CONDUITS?)\b")
 
 
 def read(data: bytes, mapper: SymbolMapper, log: list[str], warnings: list[str],
@@ -817,6 +1042,52 @@ def read(data: bytes, mapper: SymbolMapper, log: list[str], warnings: list[str],
     results = _read_pages(data, doc, [(n, *texts_of[n]) for n in with_heading], mapper, allow=False, points_of=points_of,
                           outlines_of=outlines_of)
     legend_seen = any(r["legend"] for r in results)
+    # a legend sheet whose legend words are drawn as lines (CAD fonts exported as shapes), only the title block
+    # being text: its words are read from the image (OCR) as well
+    lettered: list[int] = []
+    if not legend_seen and ocr_lines is None and ocr.available():
+        for r in results:
+            n = r["page"]
+            lines, used = texts_of[n]
+            if used or not any(LEGEND_TITLE.match(norm(t.text)) or re.search(r"\bLEGENDS?\b", norm(t.text)) for t, _ in lines):
+                continue
+            if ocr.progress:
+                ocr.progress(n, doc.page_count)
+            extra = [(t, rr) for t, rr in ocr.page_lines(doc[n - 1], doc_hash)
+                     if not any((rr & r0).get_area() > 0.5 * rr.get_area() for _, r0 in lines)]
+            if extra:
+                texts_of[n] = (lines + extra, True)
+                lettered.append(n)
+        if lettered:
+            again = {x["page"]: x for x in _read_pages(data, doc, [(n, *texts_of[n]) for n in lettered], mapper, allow=False,
+                                                       points_of=points_of, outlines_of=outlines_of)}
+            results = [again.get(r["page"], r) for r in results]
+            legend_seen = any(r["legend"] for r in results)
+    # the legend on a sheet of its own (the legend fills a good part of it, hardly any points - fewer than the
+    # legend has symbols): the plan sheets without a legend use it. The legend sheet is not a floor (what it found
+    # outside the legend are strays).
+    legend_sheets = [r for r in results if r.get("own_legend") and "sheet" in r and r.get("legend_share", 0) >= 0.25
+                     and len(r["sheet"].points) < len(r["own_legend"][0]) + len(r["own_legend"][1])]
+    if legend_sheets and len(legend_sheets) < len(texts_of):
+        for r in legend_sheets:
+            del r["sheet"]
+        shared = ([s for r in legend_sheets for s in r["own_legend"][0]],
+                  {k: v for r in legend_sheets for k, v in r["own_legend"][1].items()})
+        rest = sorted(set(texts_of) - {r["page"] for r in results if r["legend"]})
+        # a full working set (architecture, plumbing, structure ...): only the electrical layout sheets
+        electrical = [n for n in rest if any(len(t.text.split()) <= 8 and ELECTRICAL_SHEET.search(norm(t.text))
+                                            for t, _ in texts_of[n][0])]
+        rest = electrical or rest
+        if rest:
+            more = _read_pages(data, doc, [(n, *texts_of[n]) for n in rest], mapper, allow=False, points_of=points_of,
+                               outlines_of=outlines_of, shared=shared)
+            # (a sheet with none of the legend's symbols - cover, notes, details - is not a plan; nor one with no
+            # floor named and hardly any rooms: a schematic, a panel detail)
+            more = [r for r in more if "sheet" in r and r["sheet"].points
+                    and (not r["sheet"].default_floor.startswith("Page ") or len(r["sheet"].rooms) >= 5)]
+            results += more
+            log.append(f"Legend on page(s) {_pages([r['page'] for r in legend_sheets])} used for page(s) "
+                       f"{_pages(sorted(r['page'] for r in more)) or 'none'}")
     no_legend = sorted(set(texts_of) - {r["page"] for r in results if r["legend"]})
     if not legend_seen and no_legend:
         results = _read_pages(data, doc, [(n, *texts_of[n]) for n in sorted(texts_of)], mapper, allow=True,
@@ -832,6 +1103,9 @@ def read(data: bytes, mapper: SymbolMapper, log: list[str], warnings: list[str],
     if ocr_pages:
         warnings.append(f"Page(s) {_pages(ocr_pages)} had no text (printed to PDF) - their words were read from the "
                         "image (OCR); check room names and counts.")
+    if lettered:
+        warnings.append(f"Page(s) {_pages(lettered)}: the legend's words are drawn as lines, not text - they were read "
+                        "from the image (OCR); check the legend.")
     if no_legend and legend_seen:
         warnings.append(f"Page(s) {_pages(no_legend)}: no legend found - only the title block was read on these pages.")
     elif no_legend:

@@ -14,14 +14,15 @@ blocks:
 types:
   exhaust_fan: ['EXHAUST', '\bEXH\b', '\bE\s?FAN\b', 'VENT\w* FAN']
   fan: ['\bFAN\b', 'CEILING FAN', '\bCF\b']
-  light: ['LIGHT', '\bLAMP\b', 'DOWN ?LIGHT', '\bSPOT\b', '\bLED\b', '\bBULB\b', '\bTUBE\b', 'CHANDELIER', '\bLT\b', '\bLUM']
+  light: ['LIGHT(?! PLUG)', '(?<!SOCKET FOR )\bLAMP\b', 'DOWN ?LIGHT', '\bSPOT\b', '\bLED\b', '\bBULB\b', '\bTUBE\b', 'CHANDELIER', '\bLT\b', '\bLUM']
   ac_point: ['\bA ?C\b', 'AIR ?COND', '\bSPLIT\b', '\bHVAC\b']
   geyser: ['GEYSER', 'WATER HEATER', '\bWH\b']
-  socket_15A: ['\b(15|16|20) ?A(MP)?\b', 'POWER (SOCKET|POINT|OUTLET)']
-  socket_5A: ['\b(5|6|10|13) ?A(MP)?\b', 'SOCKET', 'OUTLET', 'RECEPTACLE', '\bSKT\b', '\bS ?O\b']
-  switch: ['SWITCH', '\bSW\b', '\bSWB\b', 'GANG']
+  # (before the sockets: a TV / telephone / internet socket is that point)
   tv_point: ['\bTV\b', '\bT ?V POINT\b', 'TELEVISION', '\bCATV\b']
   data_point: ['\bDATA\b', '\bLAN\b', '\bRJ ?45\b', 'INTERNET', '\bNETWORK\b', '\bTEL\b', 'TELEPHONE']
+  socket_15A: ['\b(15|16|20) ?A(MP)?\b', 'POWER (SOCKET|POINT|OUTLET)']
+  socket_5A: ['\b(5|6|10|13) ?A(MP)?\b', 'SOCKET', 'OUTLET', 'RECEPTACLE', '\bSKT\b', '\bS ?O\b', '\bPLUG\b']   # "LIGHT PLUG 5/10Amp" is a socket
+  switch: ['SWITCH', '\bSW\b', '\bSWB\b', 'GANG']
   db_panel: ['\bD ?B\b', 'DISTRIBUTION', '\bPANEL\b', '\bMCB\b', '\bMDB\b', '\bSDB\b']
   bell: ['\bBELL\b', 'CHIME']
   cctv: ['CCTV', 'CAMERA']
