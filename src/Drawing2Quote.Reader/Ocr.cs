@@ -47,11 +47,20 @@ public static class Ocr
         lock (EngineLock) return _engine ??= new RapidOcr(ModelDir);
     }
 
-    private static string CacheDir()
+    /// <summary>the OCR cache folder; null when it can't be made (e.g. an IIS app pool without a writable temp folder):
+    /// the words are then read without a cache</summary>
+    private static string? CacheDir()
     {
         var d = Environment.GetEnvironmentVariable("D2Q_OCR_CACHE") is { Length: > 0 } c ? c : Path.Combine(Path.GetTempPath(), "drawing2quote-ocr");
-        Directory.CreateDirectory(d);
-        return d;
+        try
+        {
+            Directory.CreateDirectory(d);
+            return d;
+        }
+        catch (Exception exc) when (exc is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
     }
 
     internal static string Sha1(byte[] data) => Convert.ToHexString(SHA1.HashData(data)).ToLowerInvariant();
@@ -169,7 +178,13 @@ public static class Ocr
     /// <summary>the words of an image (text, confidence, pixel box), read once: image() gives the RGB image when needed</summary>
     private static List<OcrWord> CachedWords(string key, Func<Mat> image)
     {
-        var cache = Path.Combine(CacheDir(), Sha1(key) + ".json");
+        var dir = CacheDir();
+        if (dir == null)
+        {
+            using var picture = image();
+            return Dedupe(ReadImage(picture).Where(w => w.Conf >= MinConfidence && w.Text.Trim().Length > 0));
+        }
+        var cache = Path.Combine(dir, Sha1(key) + ".json");
         if (File.Exists(cache))
         {
             try
@@ -191,21 +206,32 @@ public static class Ocr
         List<OcrWord> read;
         using (var img = image())
             read = Dedupe(ReadImage(img).Where(w => w.Conf >= MinConfidence && w.Text.Trim().Length > 0));
-        using (var fs = File.Create(cache))
-        using (var jw = new Utf8JsonWriter(fs))
+        // the cache only saves time: a file that can't be written (disk full, locked by the Python reader) doesn't fail the
+        // reading. It is written whole beside and then moved in, so neither reader ever sees half a file.
+        var part = $"{cache}.{Environment.ProcessId}.{Environment.CurrentManagedThreadId}.part";
+        try
         {
-            jw.WriteStartArray();
-            foreach (var w in read)
+            using (var fs = File.Create(part))
+            using (var jw = new Utf8JsonWriter(fs))
             {
                 jw.WriteStartArray();
-                jw.WriteStringValue(w.Text);
-                jw.WriteNumberValue(w.Conf);
-                jw.WriteStartArray();
-                jw.WriteNumberValue(w.X0); jw.WriteNumberValue(w.Y0); jw.WriteNumberValue(w.X1); jw.WriteNumberValue(w.Y1);
-                jw.WriteEndArray();
+                foreach (var w in read)
+                {
+                    jw.WriteStartArray();
+                    jw.WriteStringValue(w.Text);
+                    jw.WriteNumberValue(w.Conf);
+                    jw.WriteStartArray();
+                    jw.WriteNumberValue(w.X0); jw.WriteNumberValue(w.Y0); jw.WriteNumberValue(w.X1); jw.WriteNumberValue(w.Y1);
+                    jw.WriteEndArray();
+                    jw.WriteEndArray();
+                }
                 jw.WriteEndArray();
             }
-            jw.WriteEndArray();
+            File.Move(part, cache, overwrite: true);
+        }
+        catch (Exception exc) when (exc is IOException or UnauthorizedAccessException)
+        {
+            try { File.Delete(part); } catch (Exception) { /* left for the next time */ }
         }
         return read;
     }

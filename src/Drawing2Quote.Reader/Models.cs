@@ -82,4 +82,7 @@ public sealed class Section
 public sealed class RejectedFileException : Exception
 {
     public RejectedFileException(string message) : base(message) { }
+
+    /// <summary>an error inside the reader, not something wrong with the file: InnerException is the cause (for the log)</summary>
+    public RejectedFileException(string message, Exception inner) : base(message, inner) { }
 }

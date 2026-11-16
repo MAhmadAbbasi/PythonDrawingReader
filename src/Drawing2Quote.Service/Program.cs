@@ -27,6 +27,13 @@ app.UseCors();
 
 string? serviceKey = Environment.GetEnvironmentVariable("D2Q_KEY") is { Length: > 0 } envKey ? envKey : app.Configuration["Reader:Key"];
 var log = app.Logger;
+
+// a file refused for what it is (a DWG, a locked PDF ...) is the user's to fix; one refused because the reader failed
+// inside is a bug to find: its cause and stack trace go to the log (the console, and the Windows event log)
+void LogIfInternal(RejectedFileException exc, string file)
+{
+    if (exc.InnerException is { } cause) log.LogError(cause, "Reading {File} failed inside the reader", file);
+}
 log.LogInformation("Drawing2Quote (.NET) - {Environment}; service key {Key}; browser origins: {Origins}",
                    app.Environment.EnvironmentName, string.IsNullOrEmpty(serviceKey) ? "not required" : "required", string.Join(", ", origins));
 
@@ -77,6 +84,7 @@ app.MapPost("/extract", async (HttpRequest req) =>
     }
     catch (RejectedFileException exc)
     {
+        LogIfInternal(exc, name);
         return Detail(422, exc.Message);
     }
 });
@@ -128,6 +136,7 @@ app.MapPost("/jobs", async (HttpRequest req) =>
             }
             catch (RejectedFileException exc)
             {
+                LogIfInternal(exc, name);
                 job.Detail = exc.Message;
                 job.Status = "failed";
             }

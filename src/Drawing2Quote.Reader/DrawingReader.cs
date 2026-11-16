@@ -65,7 +65,7 @@ public static class DrawingReader
         }
         catch (Exception exc)
         {
-            throw new RejectedFileException($"The drawing could not be read: {exc.Message}");
+            throw new RejectedFileException($"The drawing could not be read: {exc.Message}", exc);
         }
         if (kind is "scan" or "image" && !LooksLikePlan(sheets))
             throw new RejectedFileException("This picture doesn't look like a floor plan: no room names, floor titles or electrical " +
