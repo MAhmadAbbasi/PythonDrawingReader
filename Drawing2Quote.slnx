@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Drawing2Quote.Cli/Drawing2Quote.Cli.csproj" />
     <Project Path="src/Drawing2Quote.Reader/Drawing2Quote.Reader.csproj" />
+    <Project Path="src/Drawing2Quote.Service/Drawing2Quote.Service.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Drawing2Quote.Reader.Tests/Drawing2Quote.Reader.Tests.csproj" />

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Drawing2Quote.Reader\Drawing2Quote.Reader.csproj" />
+    <ProjectReference Include="..\..\src\Drawing2Quote.Service\Drawing2Quote.Service.csproj" />
   </ItemGroup>
 
   <ItemGroup>

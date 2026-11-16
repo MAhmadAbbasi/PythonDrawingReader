@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Drawing2Quote.Service": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:8766",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

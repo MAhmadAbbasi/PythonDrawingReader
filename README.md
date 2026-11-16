@@ -16,7 +16,30 @@ point counts, and returns the same JSON as the Python service's `/extract`.
 Python behaviour the results depend on (half-to-even rounding, float formatting, numpy's pairwise sums, medians and
 percentiles in float32, difflib's ratio, stable sorts) is reproduced in `Py.cs`.
 
-## Use
+## The service the POS calls
+
+`src/Drawing2Quote.Service` answers the same API as the Python service (branch `main`): `/health`, `/extract`,
+`/jobs`, `/jobs/{id}`, `/rules`, `/suggest`, `/suggest/xlsx` - the solution rules (`src/Drawing2Quote.Service/Rules`)
+give the Python rules' answers (51 requests checked). `/health` also says `"reader": "dotnet"`.
+
+| | Development | Production |
+|---|---|---|
+| run | `dotnet run --project src/Drawing2Quote.Service` | `dotnet publish src/Drawing2Quote.Service -c Release -o publish`, copy `publish` to the IIS site `drawingreader.asyntexconsultancy.com` (its `web.config` runs the 64-bit exe out of process) |
+| address | `http://localhost:8766` | `https://drawingreader.asyntexconsultancy.com` |
+| settings | `appsettings.Development.json`: no key | `appsettings.Production.json`: `Reader:Key`, the same as the POS's `DrawingService:Readers:dotnet:Key` |
+
+`Reader:AllowedOrigins` (`appsettings.json`): the browsers allowed to call it - the POS frontends
+`OneTouchAutomationPOS.asyntexconsultancy.com`, `OneTouchAutomationbackend.asyntexconsultancy.com` and the local dev
+ports. The POS backend itself calls server to server: only the key matters there. `D2Q_KEY` overrides the key.
+
+The POS chooses the reader (`DrawingService:Reader` = `dotnet` or `python` in its `appsettings.Development.json` /
+`appsettings.Production.json`); the Python reader runs on `http://127.0.0.1:8765` locally and at
+`abc.asyntexconsultancy.com` when deployed, so both can run side by side.
+
+On IIS, set the site's application pool to "No Managed Code" and switch off idle time-out (or set it long): a reading
+runs in the background after the upload request has ended.
+
+## Use as a library
 
 ```csharp
 using Drawing2Quote.Reader;

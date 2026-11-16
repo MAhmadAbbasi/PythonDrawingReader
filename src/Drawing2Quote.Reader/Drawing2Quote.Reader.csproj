@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Drawing2Quote.Reader.Tests" />
+    <InternalsVisibleTo Include="Drawing2Quote.Service" />
   </ItemGroup>
 
   <ItemGroup>
