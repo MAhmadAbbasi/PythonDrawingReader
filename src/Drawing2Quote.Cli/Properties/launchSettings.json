@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "d2q (sample drawing)": {
+      "commandName": "Project",
+      "commandLineArgs": "../../tests/Drawing2Quote.Reader.Tests/data/sample.dxf",
+      "workingDirectory": "$(ProjectDir)"
+    }
+  }
+}
