@@ -10,3 +10,13 @@ __pycache__/
 .pytest_cache/
 dotnet/
 x
+
+# customer drawings, quotes and spreadsheets are never committed (the test drawings under tests/ are)
+*.pdf
+*.PDF
+*.xlsx
+*.xls
+*.xlsm
+*.XLSX
+*.XLS
+!tests/**/*.pdf
