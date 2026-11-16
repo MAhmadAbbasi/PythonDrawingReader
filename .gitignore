@@ -1,10 +1,12 @@
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+
+# left from the Python reader (branch main) and local checks: not part of this branch
 __pycache__/
 *.pyc
 .pytest_cache/
-.venv/
-venv/
-*.egg-info/
-# profiler output and scratch files
+dotnet/
 x
-*.prof
-*.log

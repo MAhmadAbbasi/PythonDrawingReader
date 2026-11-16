@@ -1,0 +1,183 @@
+{
+ "fileName": "sample.dxf",
+ "fileType": "dxf",
+ "project": {
+  "projectName": "Khan Villa",
+  "client": "Mr. Ahmed Khan",
+  "drawingNumber": "E-101",
+  "scale": "1:100",
+  "date": "01-10-2026",
+  "architect": "Studio A",
+  "plotSize": "10 Marla"
+ },
+ "floors": [
+  {
+   "name": "Ground Floor",
+   "areas": [
+    {
+     "name": "MASTER BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 196.0,
+     "dimensions": "14'x14'",
+     "items": {
+      "ac_point": 1,
+      "curtain": 2,
+      "fan": 1,
+      "light": 6,
+      "socket_15A": 1,
+      "socket_5A": 4
+     },
+     "confidence": 1.0
+    },
+    {
+     "name": "LOUNGE",
+     "roomType": "lounge",
+     "areaSqft": 320.0,
+     "dimensions": "16'x20'",
+     "items": {
+      "ac_point": 1,
+      "fan": 2,
+      "light": 8,
+      "socket_5A": 6
+     },
+     "confidence": 1.0
+    },
+    {
+     "name": "KITCHEN",
+     "roomType": "kitchen",
+     "areaSqft": 120.0,
+     "dimensions": "10'x12'",
+     "items": {
+      "exhaust_fan": 1,
+      "light": 4,
+      "socket_15A": 2,
+      "socket_5A": 3
+     },
+     "confidence": 1.0
+    },
+    {
+     "name": "Unassigned",
+     "roomType": null,
+     "areaSqft": null,
+     "dimensions": null,
+     "items": {
+      "light": 1
+     },
+     "confidence": 0.0
+    }
+   ],
+   "areaSqft": 636.0
+  },
+  {
+   "name": "First Floor",
+   "areas": [
+    {
+     "name": "BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 168.0,
+     "dimensions": null,
+     "items": {
+      "ac_point": 1,
+      "fan": 1,
+      "light": 3
+     },
+     "confidence": 1.0
+    },
+    {
+     "name": "GUEST ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 144.0,
+     "dimensions": "12'x12'",
+     "items": {
+      "fan": 1,
+      "light": 2
+     },
+     "confidence": 1.0
+    }
+   ],
+   "areaSqft": 312.0
+  }
+ ],
+ "legend": [
+  {
+   "symbol": "E01",
+   "description": "LIGHT POINT",
+   "type": "light"
+  },
+  {
+   "symbol": "E02",
+   "description": "CEILING FAN",
+   "type": "fan"
+  },
+  {
+   "symbol": "E03",
+   "description": "5A SOCKET",
+   "type": "socket_5A"
+  },
+  {
+   "symbol": "E04",
+   "description": "15A POWER SOCKET",
+   "type": "socket_15A"
+  },
+  {
+   "symbol": "E05",
+   "description": "AC POINT",
+   "type": "ac_point"
+  },
+  {
+   "symbol": "E06",
+   "description": "CURTAIN",
+   "type": "curtain"
+  }
+ ],
+ "totals": {
+  "areaSqft": 948.0,
+  "items": {
+   "ac_point": 3,
+   "curtain": 2,
+   "exhaust_fan": 1,
+   "fan": 5,
+   "light": 24,
+   "socket_15A": 3,
+   "socket_5A": 13
+  },
+  "points": 51
+ },
+ "sections": [],
+ "electrical": true,
+ "warnings": [
+  "1 block(s) are not mapped to a point type and were not counted: XYZ1 (1). Add them to config/block_mapping.yaml if they are electrical points.",
+  "Ground Floor: 1 point(s) are outside every room - they are in \"Unassigned\"; move them to the right room."
+ ],
+ "log": [
+  "DXF version AC1024, 90 entities in model space",
+  "Step 1 - project info: projectName=Khan Villa, client=Mr. Ahmed Khan, drawingNumber=E-101, scale=1:100, date=01-10-2026, architect=Studio A, plotSize=10 Marla",
+  "Step 2 - floors: First Floor, Ground Floor",
+  "Step 3 - legend: 6 symbol(s): E01=light, E02=fan, E03=socket_5A, E04=socket_15A, E05=ac_point, E06=curtain",
+  "Drawing units: feet",
+  "Step 4 - rooms: 5 found (5 closed outlines checked, room layers used)",
+  "Step 5 - points: ac_point 3, curtain 2, exhaust_fan 1, fan 5, light 24, socket_15A 3, socket_5A 13",
+  "Ground Floor: 3 room(s), 43 point(s)",
+  "First Floor: 2 room(s), 8 point(s)",
+  "Step 6/7 - points outside rooms are in \"Unassigned\"; every area has a confidence score"
+ ],
+ "pointTypes": [
+  "exhaust_fan",
+  "fan",
+  "light",
+  "ac_point",
+  "geyser",
+  "tv_point",
+  "data_point",
+  "socket_15A",
+  "socket_5A",
+  "switch",
+  "db_panel",
+  "bell",
+  "cctv",
+  "intercom",
+  "curtain",
+  "smoke_detector",
+  "main_door"
+ ]
+}

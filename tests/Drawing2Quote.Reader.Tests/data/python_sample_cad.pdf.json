@@ -1,0 +1,230 @@
+{
+ "fileName": "sample_cad.pdf",
+ "fileType": "pdf",
+ "project": {
+  "projectName": "Test House",
+  "client": "Mr. Test",
+  "scale": "100",
+  "drawingNumber": "E-201"
+ },
+ "floors": [
+  {
+   "name": "Ground Floor",
+   "areas": [
+    {
+     "name": "MASTER BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 224.0,
+     "dimensions": "14'x16'",
+     "items": {
+      "ac_point": 1,
+      "curtain": 1,
+      "fan": 1,
+      "light": 4,
+      "socket_5A": 3,
+      "switch": 1,
+      "tv_point": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "LOUNGE",
+     "roomType": "lounge",
+     "areaSqft": 224.0,
+     "dimensions": "14'x16'",
+     "items": {
+      "ac_point": 1,
+      "fan": 2,
+      "light": 6,
+      "socket_15A": 1,
+      "socket_5A": 4,
+      "switch": 2,
+      "tv_point": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "KITCHEN",
+     "roomType": "kitchen",
+     "areaSqft": 103.5,
+     "dimensions": null,
+     "items": {
+      "exhaust_fan": 1,
+      "light": 2,
+      "socket_15A": 2,
+      "socket_5A": 2,
+      "switch": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "BATH",
+     "roomType": "bath",
+     "areaSqft": 59.1,
+     "dimensions": null,
+     "items": {
+      "exhaust_fan": 1,
+      "light": 1,
+      "switch": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "PASSAGE",
+     "roomType": "corridor",
+     "areaSqft": 166.8,
+     "dimensions": null,
+     "items": {
+      "light": 3,
+      "switch": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 154.0,
+     "dimensions": "14'x11'",
+     "items": {
+      "ac_point": 1,
+      "fan": 1,
+      "light": 3,
+      "socket_5A": 2,
+      "switch": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "GUEST ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 115.3,
+     "dimensions": null,
+     "items": {
+      "fan": 1,
+      "light": 2,
+      "socket_5A": 2,
+      "switch": 1
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "DINING",
+     "roomType": "dining",
+     "areaSqft": 154.0,
+     "dimensions": "14'x11'",
+     "items": {
+      "fan": 1,
+      "light": 3,
+      "socket_5A": 2
+     },
+     "confidence": 0.9
+    },
+    {
+     "name": "Unassigned",
+     "roomType": null,
+     "areaSqft": null,
+     "dimensions": null,
+     "items": {
+      "light": 1
+     },
+     "confidence": 0.0
+    }
+   ],
+   "areaSqft": 1200.7
+  }
+ ],
+ "legend": [
+  {
+   "symbol": "shape",
+   "description": "LIGHT POINT",
+   "type": "light"
+  },
+  {
+   "symbol": "shape",
+   "description": "CEILING FAN",
+   "type": "fan"
+  },
+  {
+   "symbol": "shape",
+   "description": "EXHAUST FAN",
+   "type": "exhaust_fan"
+  },
+  {
+   "symbol": "shape",
+   "description": "5A SOCKET",
+   "type": "socket_5A"
+  },
+  {
+   "symbol": "shape",
+   "description": "15A POWER SOCKET",
+   "type": "socket_15A"
+  },
+  {
+   "symbol": "shape with \"S\"",
+   "description": "SWITCH BOARD",
+   "type": "switch"
+  },
+  {
+   "symbol": "shape with \"TV\"",
+   "description": "TV POINT",
+   "type": "tv_point"
+  },
+  {
+   "symbol": "AC",
+   "description": "AC POINT",
+   "type": "ac_point"
+  },
+  {
+   "symbol": "shape",
+   "description": "CURTAIN",
+   "type": "curtain"
+  }
+ ],
+ "totals": {
+  "areaSqft": 1200.7,
+  "items": {
+   "ac_point": 3,
+   "curtain": 1,
+   "exhaust_fan": 2,
+   "fan": 6,
+   "light": 25,
+   "socket_15A": 3,
+   "socket_5A": 15,
+   "switch": 8,
+   "tv_point": 2
+  },
+  "points": 65
+ },
+ "sections": [],
+ "electrical": true,
+ "warnings": [
+  "Ground Floor: 1 point(s) are outside every room - they are in \"Unassigned\"; move them to the right room."
+ ],
+ "log": [
+  "Vector PDF, 1 page(s) - each page is read as a floor",
+  "Step 1/2 - title block and floor titles are read from the page text",
+  "Page 1 (Ground Floor): legend 9 symbol(s), 8 room(s) (8 traced from walls), 68 symbol shape(s) checked; ac_point 3, curtain 1, exhaust_fan 2, fan 6, light 25, socket_15A 3, socket_5A 15, switch 8, tv_point 2",
+  "Step 3 - legend: LIGHT POINT=light, CEILING FAN=fan, EXHAUST FAN=exhaust_fan, 5A SOCKET=socket_5A, 15A POWER SOCKET=socket_15A, SWITCH BOARD=switch, TV POINT=tv_point, AC POINT=ac_point, CURTAIN=curtain",
+  "Ground Floor: 8 room(s), 65 point(s)",
+  "Step 6/7 - points outside rooms are in \"Unassigned\"; every area has a confidence score"
+ ],
+ "pointTypes": [
+  "exhaust_fan",
+  "fan",
+  "light",
+  "ac_point",
+  "geyser",
+  "tv_point",
+  "data_point",
+  "socket_15A",
+  "socket_5A",
+  "switch",
+  "db_panel",
+  "bell",
+  "cctv",
+  "intercom",
+  "curtain",
+  "smoke_detector",
+  "main_door"
+ ]
+}

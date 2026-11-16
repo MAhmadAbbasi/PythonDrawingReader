@@ -1,0 +1,121 @@
+{
+ "fileName": "cad_nolegend.pdf",
+ "fileType": "pdf",
+ "project": {
+  "projectName": "Test House",
+  "client": "Mr. Test",
+  "scale": "100",
+  "drawingNumber": "E-201"
+ },
+ "floors": [
+  {
+   "name": "Ground Floor",
+   "areas": [
+    {
+     "name": "MASTER BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 224.0,
+     "dimensions": "14'x16'",
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "LOUNGE",
+     "roomType": "lounge",
+     "areaSqft": 224.0,
+     "dimensions": "14'x16'",
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "KITCHEN",
+     "roomType": "kitchen",
+     "areaSqft": 103.5,
+     "dimensions": null,
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "BATH",
+     "roomType": "bath",
+     "areaSqft": 59.1,
+     "dimensions": null,
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "PASSAGE",
+     "roomType": "corridor",
+     "areaSqft": 166.8,
+     "dimensions": null,
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "BED ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 154.0,
+     "dimensions": "14'x11'",
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "GUEST ROOM",
+     "roomType": "bedroom",
+     "areaSqft": 115.3,
+     "dimensions": null,
+     "items": {},
+     "confidence": 0.8
+    },
+    {
+     "name": "DINING",
+     "roomType": "dining",
+     "areaSqft": 154.0,
+     "dimensions": "14'x11'",
+     "items": {},
+     "confidence": 0.8
+    }
+   ],
+   "areaSqft": 1200.7
+  }
+ ],
+ "legend": [],
+ "totals": {
+  "areaSqft": 1200.7,
+  "items": {},
+  "points": 0
+ },
+ "sections": [],
+ "electrical": false,
+ "warnings": [
+  "Not an electrical drawing: it has no electrical legend or points (an architectural layout). The solution is suggested from the rooms and areas found only - lights, switches and sockets are estimated per room.",
+  "Page 1: 5 repeated symbol shape(s) found but not counted (no legend says what they are): shape A x27, shape B x15, shape C x8, shape D x6, shape E x3"
+ ],
+ "log": [
+  "Vector PDF, 1 page(s) - each page is read as a floor",
+  "Step 1/2 - title block and floor titles are read from the page text",
+  "Page 1 (Ground Floor): legend 0 symbol(s), 8 room(s) (8 traced from walls), 64 symbol shape(s) checked; no points",
+  "Step 3 - legend: none",
+  "Ground Floor: 8 room(s), 0 point(s)",
+  "Step 6/7 - points outside rooms are in \"Unassigned\"; every area has a confidence score"
+ ],
+ "pointTypes": [
+  "exhaust_fan",
+  "fan",
+  "light",
+  "ac_point",
+  "geyser",
+  "tv_point",
+  "data_point",
+  "socket_15A",
+  "socket_5A",
+  "switch",
+  "db_panel",
+  "bell",
+  "cctv",
+  "intercom",
+  "curtain",
+  "smoke_detector",
+  "main_door"
+ ]
+}
