@@ -18,3 +18,8 @@ x
 *.XLSX
 *.XLS
 !tests/**/*.pdf
+
+# .NET build output and Visual Studio settings (left on disk after using branch DotNet/change)
+bin/
+obj/
+.vs/
