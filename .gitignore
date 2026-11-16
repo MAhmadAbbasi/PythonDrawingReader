@@ -20,3 +20,6 @@ x
 *.XLSX
 *.XLS
 !tests/**/*.pdf
+
+# the folder Publish writes for uploading
+publish/
