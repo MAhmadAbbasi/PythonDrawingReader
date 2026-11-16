@@ -1,0 +1,29 @@
+# How the Drawing2Quote service runs. The section used is D2Q_ENV: development (the default - start-service.bat)
+# or production (start-service-production.bat, the deployed reader at abc.asyntexconsultancy.com behind IIS).
+#
+#   host / port   where it listens (production: on the server itself; IIS passes the site's requests to it -
+#                 deploy/web.config)
+#   key           the X-Service-Key the POS must send (DrawingService:Readers:python:Key in the POS settings);
+#                 "" = none. The D2Q_KEY environment variable overrides it.
+
+development:
+  host: 127.0.0.1
+  port: 8765
+  key: ""
+
+production:
+  host: 127.0.0.1
+  port: 8765
+  key: CHANGE-ME-TO-A-STRONG-READER-KEY
+
+# Browsers allowed to call the service directly (the POS frontends, deployed and local). The POS backend calls it
+# server to server, so it needs no entry here - only the key.
+allowed_origins:
+  - https://OneTouchAutomationPOS.asyntexconsultancy.com
+  - http://OneTouchAutomationPOS.asyntexconsultancy.com
+  - https://OneTouchAutomationbackend.asyntexconsultancy.com
+  - http://OneTouchAutomationbackend.asyntexconsultancy.com
+  - http://localhost:3000
+  - http://localhost:5173
+  - http://localhost:5194
+  - http://localhost:42453

@@ -37,16 +37,22 @@ Drawing2Quote  (this service, FastAPI on 127.0.0.1:8765)
 
 ```
 pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8765
+start-service.bat                  development: http://127.0.0.1:8765, no key
+start-service-production.bat       production (D2Q_ENV=production)
 ```
 
-POS backend settings (`appsettings*.json`):
+Settings: `config/service.yaml`, one section per environment (`D2Q_ENV`): where the service listens, the key the
+POS must send (`X-Service-Key`; the `D2Q_KEY` environment variable overrides it), and the browser origins allowed
+(the POS frontends `OneTouchAutomationPOS.asyntexconsultancy.com`, `OneTouchAutomationbackend.asyntexconsultancy.com`
+and the local dev ports).
 
-```json
-"DrawingService": { "Url": "http://127.0.0.1:8765", "Key": "" }
-```
+**Deployed** at `abc.asyntexconsultancy.com`: run `start-service-production.bat` on the server (at start-up, so it stays
+up) and copy `deploy/web.config` to the IIS site - it passes the site's requests to the service (IIS URL Rewrite + ARR).
+Set the production key here and in the POS.
 
-Set the same key in the `D2Q_KEY` environment variable of this service if it is reachable from other machines.
+**The POS** chooses the reader in its settings (`DrawingService`): `Reader` is `python` (this service) or `dotnet` (the
+.NET reader, branch `DotNet/change`); `Readers:python:Url` is `http://127.0.0.1:8765` in `appsettings.Development.json`
+and `https://abc.asyntexconsultancy.com` in `appsettings.Production.json`. Both readers answer the same API.
 
 ## Command line
 

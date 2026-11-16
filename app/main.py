@@ -6,11 +6,11 @@
   POST /suggest   (json)       {extraction, catalog, plan, choices?, sizeId?, installation?} -> suggested solution,
                                with its product breakdown per area ("breakdown")
   POST /suggest/xlsx (json)    the same -> the product breakdown as an Excel sheet
-Run:  uvicorn app.main:app --host 127.0.0.1 --port 8765
-Set D2Q_KEY to require the same key from the POS (X-Service-Key header)."""
+Run:  start-service.bat (development) / start-service-production.bat (production) - python -m app.serve
+Settings: config/service.yaml (D2Q_ENV = development | production): where it listens, the key the POS must send
+(X-Service-Key; D2Q_KEY overrides), the browser origins allowed (the POS frontends)."""
 from __future__ import annotations
 
-import os
 import re
 import threading
 import time
@@ -19,25 +19,28 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .extract import RejectedFile, SUPPORTED_MESSAGE, extract, ocr
 from .extract.validator import MAX_BYTES, check
 from .rules.breakdown import to_xlsx
 from .rules.suggest import rule_list, suggest
+from .settings import SETTINGS
 
 app = FastAPI(title="Drawing2Quote", version="1.0")
+app.add_middleware(CORSMiddleware, allow_origins=SETTINGS["allowed_origins"], allow_methods=["*"], allow_headers=["*"])
 
 
 def service_key(x_service_key: str | None = Header(default=None)) -> None:
-    key = os.environ.get("D2Q_KEY")
+    key = SETTINGS["key"]
     if key and x_service_key != key:
         raise HTTPException(status_code=401, detail="Wrong service key.")
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "supported": SUPPORTED_MESSAGE}
+    return {"status": "ok", "supported": SUPPORTED_MESSAGE, "reader": "python"}
 
 
 # a plain def (not async): FastAPI runs it on a worker thread, so a long drawing doesn't freeze the service
